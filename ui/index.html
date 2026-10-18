@@ -48,7 +48,18 @@
     p { margin: 0; font-size: 18px; color: var(--muted); }
     .dots { display: flex; gap: 8px; margin-top: 10px; }
     .dots span { width: 7px; height: 7px; border-radius: 50%; }
+    .hint {
+      margin-top: 22px;
+      padding: 14px 20px;
+      border-radius: 14px;
+      background: #ffffff;
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--ink);
+    }
     small {
+      line-height: 1.6;
       margin-top: 18px;
       font-family: system-ui, sans-serif;
       font-size: 12px;
@@ -66,7 +77,8 @@
       <span style="background: var(--butter)"></span>
       <span style="background: var(--graphite)"></span>
     </div>
-    <small>Early preview · version 0.1 · more features coming soon</small>
+    <p class="hint">Move your cursor to the <strong>very top of the screen, near the middle</strong>,<br>and rest it there for a moment. The island will open.</p>
+    <small>Closing this window keeps StillLife running in the tray (bottom-right).<br>Early preview · version 0.2</small>
   </main>
 </body>
 </html>

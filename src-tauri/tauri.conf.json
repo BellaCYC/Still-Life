@@ -1,14 +1,17 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "StillLife",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "io.github.bellacyc.stilllife",
   "build": {
     "frontendDist": "../ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
+        "url": "index.html",
         "title": "StillLife",
         "width": 960,
         "height": 640,
@@ -16,6 +19,23 @@
         "minHeight": 360,
         "resizable": true,
         "center": true
+      },
+      {
+        "label": "island",
+        "url": "island.html",
+        "title": "StillLife island",
+        "width": 1000,
+        "height": 600,
+        "x": 0,
+        "y": 0,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "focus": false,
+        "visible": true
       }
     ],
     "security": {

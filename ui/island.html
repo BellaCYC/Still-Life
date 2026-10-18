@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>StillLife island</title>
+  <style>
+    :root {
+      --ink: #2f2e2b;
+      --ink-soft: #c9c2b8;
+      --paper: #f5f5f4;
+      --glass: rgba(248, 246, 242, 0.96);
+      --muted: #5a5650;
+      --lavender: #c9c1e6;
+      --butter: #e6e3a8;
+      --sage: #b7c2ae;
+      --mist: #a9b7c2;
+      --rose: #d3b5af;
+      --spring: cubic-bezier(0.2, 0.9, 0.25, 1.12);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      user-select: none;
+    }
+
+    /* One shape that morphs between the three states. */
+    #island {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 132px;
+      height: 30px;
+      border-radius: 15px;
+      background: var(--ink);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+      transition:
+        width 0.5s var(--spring),
+        height 0.5s var(--spring),
+        border-radius 0.5s var(--spring),
+        background-color 0.35s ease,
+        box-shadow 0.35s ease;
+    }
+    body[data-state="glance"] #island {
+      width: 340px;
+      height: 56px;
+      border-radius: 28px;
+    }
+    body[data-state="open"] #island {
+      width: 960px;
+      height: 560px;
+      border-radius: 28px;
+      background: var(--glass);
+      box-shadow: 0 24px 60px rgba(60, 52, 44, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+    }
+
+    .layer {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    body[data-state="rest"] .rest,
+    body[data-state="glance"] .glance,
+    body[data-state="open"] .open {
+      opacity: 1;
+      transition-delay: 0.12s;
+    }
+    body[data-state="open"] .open { pointer-events: auto; }
+
+    /* Resting pill */
+    .rest {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #e9e4dc;
+    }
+    .planet {
+      border-radius: 50%;
+      background: var(--paper) url("icon.png") center / 130% no-repeat;
+      flex-shrink: 0;
+    }
+
+    /* Glance */
+    .glance {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px 0 10px;
+    }
+    .glance .text { display: flex; flex-direction: column; }
+    .glance strong { font-size: 14px; color: #ffffff; font-weight: 600; }
+    .glance span { font-size: 12px; color: var(--ink-soft); }
+
+    /* Open glass plate */
+    .open {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px 24px 16px;
+    }
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand .title { font-size: 16px; font-weight: 700; }
+    .brand .date { font-size: 12px; color: var(--muted); }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(47, 46, 43, 0.07);
+    }
+    .tabs button {
+      height: 32px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4a4741;
+      cursor: pointer;
+    }
+    .tabs button.on {
+      background: #ffffff;
+      color: var(--ink);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    }
+    .tabs .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+    .new {
+      height: 36px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #f3efe8;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .empty {
+      flex: 1;
+      border-radius: 20px;
+      border: 2px dashed rgba(47, 46, 43, 0.16);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-align: center;
+    }
+    .empty img { width: 150px; height: auto; mix-blend-mode: multiply; }
+    .empty h2 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-style: italic;
+      font-weight: 400;
+      font-size: 28px;
+    }
+    .empty p { margin: 0; font-size: 14px; color: var(--muted); }
+    .swatches { display: flex; gap: 8px; margin-top: 6px; }
+    .swatches span { width: 26px; height: 26px; border-radius: 8px; }
+
+    .foot {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-state="rest">
+  <div id="island">
+
+    <div class="layer rest" aria-hidden="true">
+      <span class="planet" style="width: 20px; height: 20px"></span>
+      StillLife
+    </div>
+
+    <div class="layer glance">
+      <span class="planet" style="width: 36px; height: 36px"></span>
+      <div class="text">
+        <strong>StillLife</strong>
+        <span>Keep the cursor here to open</span>
+      </div>
+    </div>
+
+    <div class="layer open">
+      <div class="head">
+        <div class="brand">
+          <span class="planet" style="width: 34px; height: 34px"></span>
+          <div>
+            <div class="title">Notes</div>
+            <div class="date" id="date"></div>
+          </div>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Labels">
+          <button class="on" role="tab" aria-selected="true">All</button>
+          <button role="tab" aria-selected="false"><span class="dot" style="background: var(--mist)"></span>School</button>
+          <button role="tab" aria-selected="false"><span class="dot" style="background: var(--sage)"></span>Research</button>
+          <button role="tab" aria-selected="false"><span class="dot" style="background: var(--rose)"></span>Personal</button>
+        </div>
+        <button class="new" disabled title="Coming in version 0.3">+ New</button>
+      </div>
+
+      <div class="empty">
+        <img src="icon.png" alt="">
+        <h2>Your notes will land here.</h2>
+        <p>Agendas and docs arrive in version 0.3. For now, enjoy the orbit.</p>
+        <div class="swatches" aria-hidden="true">
+          <span style="background: var(--sage)"></span>
+          <span style="background: var(--mist)"></span>
+          <span style="background: var(--rose)"></span>
+          <span style="background: var(--butter)"></span>
+          <span style="background: var(--lavender)"></span>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>Move the cursor away to close</span>
+        <span>StillLife · version 0.2</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, {
+      weekday: "short", day: "numeric", month: "short", year: "numeric"
+    });
+
+    const tauri = window.__TAURI__;
+    if (tauri && tauri.event) {
+      tauri.event.listen("island-state", (event) => {
+        document.body.dataset.state = event.payload;
+      });
+    }
+  </script>
+</body>
+</html>
