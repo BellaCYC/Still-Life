@@ -175,6 +175,18 @@
     }
     .full:hover { background: rgba(47, 46, 43, 0.14); }
 
+    .off {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      color: #8a4f45;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
     .empty {
       flex: 1;
       border-radius: 20px;
@@ -261,7 +273,9 @@
 
       <div class="foot">
         <span>Move the cursor away to close</span>
-        <span>StillLife · version 0.2.1</span>
+        <span>StillLife · version 0.2.1 ·
+          <button class="off" id="off" title="Hide the island until you turn it back on from the tray or the full window">Turn off island</button>
+        </span>
       </div>
     </div>
 
@@ -273,6 +287,9 @@
     });
 
     const tauri = window.__TAURI__;
+    document.getElementById("off").addEventListener("click", () => {
+      if (tauri && tauri.core) tauri.core.invoke("set_island_enabled", { enabled: false });
+    });
     document.getElementById("full").addEventListener("click", () => {
       if (tauri && tauri.core) tauri.core.invoke("open_full_window");
     });

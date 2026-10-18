@@ -59,6 +59,21 @@
       opacity: 0.45; cursor: not-allowed;
     }
 
+    .right { display: flex; align-items: center; gap: 14px; }
+    .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .track {
+      position: relative; width: 40px; height: 24px; border-radius: 999px;
+      background: #c9c2b8; transition: background 0.2s ease;
+    }
+    .knob {
+      position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+      background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform 0.2s ease;
+    }
+    .switch input:checked + .track { background: #7d9a87; }
+    .switch input:checked + .track .knob { transform: translateX(16px); }
+    .switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 2px; }
+
     main { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 24px; min-height: 0; }
 
     .tip {
@@ -103,7 +118,14 @@
       <button role="tab" aria-selected="false"><span class="dot" style="background: var(--sage)"></span>Research</button>
       <button role="tab" aria-selected="false"><span class="dot" style="background: var(--rose)"></span>Personal</button>
     </div>
-    <button class="new" disabled title="Coming in version 0.3">+ New</button>
+    <div class="right">
+      <label class="switch" title="Turn the island off before exams or presentations">
+        <input type="checkbox" id="island-switch" checked>
+        <span class="track" aria-hidden="true"><span class="knob"></span></span>
+        <span id="island-label">Island on</span>
+      </label>
+      <button class="new" disabled title="Coming in version 0.3">+ New</button>
+    </div>
   </header>
 
   <main>
@@ -112,6 +134,7 @@
       <div class="text">
         <strong>Quick look anytime:</strong> rest your cursor at the very top-middle of the screen to open the island.
         Closing this window keeps StillLife running in the tray, bottom-right.
+        Before an exam, switch <strong>Island</strong> off (top-right), or choose <strong>Quit StillLife</strong> from the tray.
       </div>
       <button id="hide-tip">Got it</button>
     </div>
@@ -136,6 +159,21 @@
     document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, {
       weekday: "long", day: "numeric", month: "long", year: "numeric"
     });
+    const tauri = window.__TAURI__;
+    const sw = document.getElementById("island-switch");
+    const label = document.getElementById("island-label");
+    function showIsland(on) {
+      sw.checked = on;
+      label.textContent = on ? "Island on" : "Island off";
+    }
+    if (tauri && tauri.core) {
+      tauri.core.invoke("island_enabled").then(showIsland);
+      tauri.event.listen("island-enabled", (e) => showIsland(e.payload));
+      sw.addEventListener("change", () => {
+        tauri.core.invoke("set_island_enabled", { enabled: sw.checked });
+      });
+    }
+
     const tip = document.getElementById("tip");
     try { if (localStorage.getItem("tipHidden") === "1") tip.remove(); } catch (e) {}
     document.getElementById("hide-tip").addEventListener("click", () => {

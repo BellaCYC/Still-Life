@@ -1,23 +1,31 @@
 //! StillLife — v0.2.1
 //!
 //! Two windows:
-//! - "main":   the welcome window. Closing it hides it; StillLife keeps running in the tray.
+//! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
 //! - "island": a transparent, always-on-top strip at the top-centre of the screen.
 //!             It is click-through while resting, so it never blocks other apps.
 //!
 //! A light background watcher checks where the cursor is. When it touches the top
 //! edge near the middle, the island grows ("glance"); if the cursor stays there for a
 //! moment, it opens into the glass plate ("open"). Moving away folds it back up.
+//!
+//! The island can be switched off completely (tray menu, the plate, or the full window),
+//! e.g. before an exam. The choice is remembered after a restart.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent, Wry};
 
 /// Set when the plate asks to fold up straight away (e.g. after opening the full window).
 struct FoldRequest(AtomicBool);
+/// Whether the island is switched on.
+struct IslandEnabled(AtomicBool);
+/// The tray's "Show island" tick box, kept so it can follow changes made elsewhere.
+struct IslandToggle(Mutex<Option<CheckMenuItem<Wry>>>);
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum IslandState {
@@ -60,6 +68,45 @@ fn place_island(island: &WebviewWindow, mon_x: i32, mon_y: i32, mon_width: u32) 
     }
 }
 
+/// A small marker file: present means "island switched off".
+fn island_off_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join("island-off"))
+}
+
+/// Switches the island on or off everywhere and remembers the choice.
+fn set_island(app: &AppHandle, enabled: bool) {
+    app.state::<IslandEnabled>().0.store(enabled, Ordering::SeqCst);
+
+    if let Some(island) = app.get_webview_window("island") {
+        let _ = app.emit_to("island", "island-state", IslandState::Rest.name());
+        let _ = island.set_ignore_cursor_events(true);
+        if enabled {
+            let _ = island.show();
+        } else {
+            let _ = island.hide();
+        }
+    }
+
+    if let Ok(guard) = app.state::<IslandToggle>().0.lock() {
+        if let Some(item) = guard.as_ref() {
+            let _ = item.set_checked(enabled);
+        }
+    }
+
+    if let Some(file) = island_off_file(app) {
+        if enabled {
+            let _ = std::fs::remove_file(&file);
+        } else {
+            if let Some(dir) = file.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&file, "off");
+        }
+    }
+
+    let _ = app.emit("island-enabled", enabled);
+}
+
 fn watch_cursor(app: AppHandle) {
     std::thread::spawn(move || {
         let mut state = IslandState::Rest;
@@ -67,6 +114,12 @@ fn watch_cursor(app: AppHandle) {
 
         loop {
             std::thread::sleep(Duration::from_millis(POLL_MS));
+
+            // Switched off: do nothing at all.
+            if !app.state::<IslandEnabled>().0.load(Ordering::SeqCst) {
+                state = IslandState::Rest;
+                continue;
+            }
 
             let Some(island) = app.get_webview_window("island") else {
                 continue;
@@ -117,26 +170,26 @@ fn watch_cursor(app: AppHandle) {
                 Some(IslandState::Rest)
             } else {
                 match state {
-                IslandState::Rest => touching_top.then_some(IslandState::Glance),
-                IslandState::Glance => {
-                    if !near_top {
-                        Some(IslandState::Rest)
-                    } else if since.elapsed() >= Duration::from_millis(OPEN_DELAY_MS) {
-                        Some(IslandState::Open)
-                    } else {
-                        None
+                    IslandState::Rest => touching_top.then_some(IslandState::Glance),
+                    IslandState::Glance => {
+                        if !near_top {
+                            Some(IslandState::Rest)
+                        } else if since.elapsed() >= Duration::from_millis(OPEN_DELAY_MS) {
+                            Some(IslandState::Open)
+                        } else {
+                            None
+                        }
                     }
-                }
-                IslandState::Open => {
-                    if near_plate {
-                        since = Instant::now();
-                        None
-                    } else if since.elapsed() >= Duration::from_millis(CLOSE_DELAY_MS) {
-                        Some(IslandState::Rest)
-                    } else {
-                        None
+                    IslandState::Open => {
+                        if near_plate {
+                            since = Instant::now();
+                            None
+                        } else if since.elapsed() >= Duration::from_millis(CLOSE_DELAY_MS) {
+                            Some(IslandState::Rest)
+                        } else {
+                            None
+                        }
                     }
-                }
                 }
             };
 
@@ -170,22 +223,52 @@ fn open_full_window(app: AppHandle, fold: tauri::State<'_, FoldRequest>) {
     show_main(&app);
 }
 
+/// Called from the plate and the full window to switch the island on or off.
+#[tauri::command]
+fn set_island_enabled(app: AppHandle, enabled: bool) {
+    set_island(&app, enabled);
+}
+
+/// Lets the full window show the current on/off state.
+#[tauri::command]
+fn island_enabled(state: tauri::State<'_, IslandEnabled>) -> bool {
+    state.0.load(Ordering::SeqCst)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(FoldRequest(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![open_full_window])
+        .manage(IslandEnabled(AtomicBool::new(true)))
+        .manage(IslandToggle(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![
+            open_full_window,
+            set_island_enabled,
+            island_enabled
+        ])
         .setup(|app| {
-            // Tray icon, so StillLife can keep running with the welcome window closed.
+            // Remembered choice from last time.
+            let enabled = island_off_file(app.handle())
+                .map(|f| !f.exists())
+                .unwrap_or(true);
+            app.state::<IslandEnabled>().0.store(enabled, Ordering::SeqCst);
+
+            // Tray icon, so StillLife can keep running with the main window closed.
             let open_item = MenuItem::with_id(app, "open", "Open StillLife", true, None::<&str>)?;
+            let island_item =
+                CheckMenuItem::with_id(app, "island", "Show island", true, enabled, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit StillLife", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&open_item, &island_item, &quit_item])?;
 
             let mut tray = TrayIconBuilder::new()
                 .tooltip("StillLife")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_main(app),
+                    "island" => {
+                        let now = app.state::<IslandEnabled>().0.load(Ordering::SeqCst);
+                        set_island(app, !now);
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 });
@@ -194,11 +277,18 @@ pub fn run() {
             }
             tray.build(app)?;
 
+            if let Ok(mut guard) = app.state::<IslandToggle>().0.lock() {
+                *guard = Some(island_item.clone());
+            }
+
             // Start the island resting, click-through, at the top-centre of the main screen.
             if let Some(island) = app.get_webview_window("island") {
                 let _ = island.set_ignore_cursor_events(true);
                 if let Ok(Some(mon)) = island.primary_monitor() {
                     place_island(&island, mon.position().x, mon.position().y, mon.size().width);
+                }
+                if !enabled {
+                    let _ = island.hide();
                 }
             }
 
@@ -206,7 +296,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the welcome window only hides it.
+            // Closing the main window only hides it.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
