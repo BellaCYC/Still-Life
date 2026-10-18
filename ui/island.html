@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>StillLife island</title>
+  <link rel="stylesheet" href="notes.css">
   <style>
     :root {
       --ink: #2f2e2b;
@@ -34,6 +35,7 @@
       top: 6px;
       left: 50%;
       transform: translateX(-50%);
+      touch-action: none;
       width: 132px;
       height: 30px;
       border-radius: 15px;
@@ -47,6 +49,14 @@
         background-color 0.35s ease,
         box-shadow 0.35s ease;
     }
+    /* Which screen edge the island is docked to. */
+    body[data-dock="bottom"] #island { top: auto; bottom: 6px; }
+    body[data-dock="left"] #island { left: 6px; top: 50%; transform: translateY(-50%); }
+    body[data-dock="right"] #island { left: auto; right: 6px; top: 50%; transform: translateY(-50%); }
+    body[data-state="glance"] #island { cursor: grab; }
+    body.dragging #island { cursor: grabbing; }
+    [data-drag] { cursor: grab; }
+
     body[data-state="glance"] #island {
       width: 340px;
       height: 56px;
@@ -210,6 +220,8 @@
     .swatches { display: flex; gap: 8px; margin-top: 6px; }
     .swatches span { width: 26px; height: 26px; border-radius: 8px; }
 
+    .notes-area { flex: 1; min-height: 0; }
+
     .foot {
       display: flex;
       justify-content: space-between;
@@ -218,7 +230,7 @@
     }
   </style>
 </head>
-<body data-state="rest">
+<body data-state="rest" data-dock="top">
   <div id="island">
 
     <div class="layer rest" aria-hidden="true">
@@ -230,50 +242,32 @@
       <span class="planet" style="width: 36px; height: 36px"></span>
       <div class="text">
         <strong>StillLife</strong>
-        <span>Keep the cursor here to open</span>
+        <span id="glance-text">Click to open · drag to move</span>
       </div>
     </div>
 
     <div class="layer open">
       <div class="head">
-        <div class="brand">
+        <div class="brand" data-drag title="Drag to move the island to another edge">
           <span class="planet" style="width: 34px; height: 34px"></span>
           <div>
             <div class="title">Notes</div>
             <div class="date" id="date"></div>
           </div>
         </div>
-        <div class="tabs" role="tablist" aria-label="Labels">
-          <button class="on" role="tab" aria-selected="true">All</button>
-          <button role="tab" aria-selected="false"><span class="dot" style="background: var(--mist)"></span>School</button>
-          <button role="tab" aria-selected="false"><span class="dot" style="background: var(--sage)"></span>Research</button>
-          <button role="tab" aria-selected="false"><span class="dot" style="background: var(--rose)"></span>Personal</button>
-        </div>
         <div class="actions">
           <button class="full" id="full" title="Open StillLife in a full window for longer sessions">
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
             Open full window
           </button>
-          <button class="new" disabled title="Coming in version 0.3">+ New</button>
         </div>
       </div>
 
-      <div class="empty">
-        <img src="icon.png" alt="">
-        <h2>Your notes will land here.</h2>
-        <p>Agendas and docs arrive in version 0.3. For now, enjoy the orbit.</p>
-        <div class="swatches" aria-hidden="true">
-          <span style="background: var(--sage)"></span>
-          <span style="background: var(--mist)"></span>
-          <span style="background: var(--rose)"></span>
-          <span style="background: var(--butter)"></span>
-          <span style="background: var(--lavender)"></span>
-        </div>
-      </div>
+      <div id="notes" class="notes-area"></div>
 
       <div class="foot">
         <span>Move the cursor away to close</span>
-        <span>StillLife · version 0.2.2 ·
+        <span>StillLife · version 0.3 ·
           <button class="off" id="off" title="Hide the island until you turn it back on from the tray or the full window">Turn off island</button>
         </span>
       </div>
@@ -281,7 +275,18 @@
 
   </div>
 
+  <script src="notes.js"></script>
   <script>
+    StillLifeNotes.mount(document.getElementById("notes"), {
+      label: "island",
+      onCounts: (c) => {
+        const t = document.getElementById("glance-text");
+        if (c.due > 0) t.textContent = c.due + (c.due === 1 ? " note due today" : " notes due today") + " · click to open";
+        else if (c.total > 0) t.textContent = c.total + (c.total === 1 ? " note" : " notes") + " · click to open";
+        else t.textContent = "Click to open · drag to move";
+      },
+    });
+
     document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, {
       weekday: "short", day: "numeric", month: "short", year: "numeric"
     });
@@ -297,7 +302,53 @@
       tauri.event.listen("island-state", (event) => {
         document.body.dataset.state = event.payload;
       });
+      tauri.event.listen("island-dock", (event) => {
+        document.body.dataset.dock = event.payload;
+      });
+      tauri.core.invoke("island_dock").then((edge) => { document.body.dataset.dock = edge; });
     }
+
+    // Drag the pill (or the plate's brand area) to move the island to another edge.
+    // A short press without moving is a click: it opens the plate.
+    const islandEl = document.getElementById("island");
+    let drag = null;
+    function canDragFrom(target) {
+      const state = document.body.dataset.state;
+      if (state === "glance") return true;
+      return state === "open" && !!target.closest("[data-drag]");
+    }
+    islandEl.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !canDragFrom(e.target)) return;
+      drag = { x: e.screenX, y: e.screenY, moved: false };
+      islandEl.setPointerCapture(e.pointerId);
+    });
+    islandEl.addEventListener("pointermove", (e) => {
+      if (!drag || !tauri) return;
+      const dx = e.screenX - drag.x;
+      const dy = e.screenY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        document.body.classList.add("dragging");
+        tauri.core.invoke("drag_island_start");
+      }
+      drag.x = e.screenX;
+      drag.y = e.screenY;
+      const r = window.devicePixelRatio || 1;
+      tauri.core.invoke("drag_island_by", { dx: Math.round(dx * r), dy: Math.round(dy * r) });
+    });
+    function endDrag(e) {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      document.body.classList.remove("dragging");
+      try { islandEl.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (!tauri) return;
+      if (moved) tauri.core.invoke("drag_island_end");
+      else if (document.body.dataset.state === "glance") tauri.core.invoke("open_island_now");
+    }
+    islandEl.addEventListener("pointerup", endDrag);
+    islandEl.addEventListener("pointercancel", endDrag);
   </script>
 </body>
 </html>

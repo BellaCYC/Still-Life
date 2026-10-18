@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StillLife</title>
+  <link rel="stylesheet" href="notes.css">
   <style>
     :root {
       --paper: #f5f5f4;
@@ -74,6 +75,7 @@
     .switch input:checked + .track .knob { transform: translateX(16px); }
     .switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 2px; }
 
+    .notes-area { flex: 1; min-height: 0; }
     main { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 24px; min-height: 0; }
 
     .tip {
@@ -112,19 +114,12 @@
         <div class="date" id="date"></div>
       </div>
     </div>
-    <div class="tabs" role="tablist" aria-label="Labels">
-      <button class="on" role="tab" aria-selected="true">All</button>
-      <button role="tab" aria-selected="false"><span class="dot" style="background: var(--mist)"></span>School</button>
-      <button role="tab" aria-selected="false"><span class="dot" style="background: var(--sage)"></span>Research</button>
-      <button role="tab" aria-selected="false"><span class="dot" style="background: var(--rose)"></span>Personal</button>
-    </div>
     <div class="right">
       <label class="switch" title="Turn the island off before exams or presentations">
         <input type="checkbox" id="island-switch" checked>
         <span class="track" aria-hidden="true"><span class="knob"></span></span>
         <span id="island-label">Island on</span>
       </label>
-      <button class="new" disabled title="Coming in version 0.3">+ New</button>
     </div>
   </header>
 
@@ -139,23 +134,15 @@
       <button id="hide-tip">Got it</button>
     </div>
 
-    <div class="empty">
-      <img src="icon.png" alt="">
-      <h1>Your notes will land here.</h1>
-      <p>Agendas and docs arrive in version 0.3.</p>
-      <div class="swatches" aria-hidden="true">
-        <span style="background: var(--sage)"></span>
-        <span style="background: var(--mist)"></span>
-        <span style="background: var(--rose)"></span>
-        <span style="background: var(--butter)"></span>
-        <span style="background: var(--lavender)"></span>
-      </div>
-    </div>
+    <div id="notes" class="notes-area"></div>
   </main>
 
-  <footer>Every note, quietly in orbit. · Early preview · version 0.2.2</footer>
+  <footer>Every note, quietly in orbit. · Early preview · version 0.3</footer>
 
+  <script src="notes.js"></script>
   <script>
+    StillLifeNotes.mount(document.getElementById("notes"), { label: "main", full: true });
+
     document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, {
       weekday: "long", day: "numeric", month: "long", year: "numeric"
     });

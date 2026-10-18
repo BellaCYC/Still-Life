@@ -1,13 +1,15 @@
-//! StillLife — v0.2.2
+//! StillLife — v0.3.0
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
-//! - "island": a transparent, always-on-top strip at the top-centre of the screen.
-//!             It is click-through while resting, so it never blocks other apps.
+//! - "island": a transparent, always-on-top window docked to one edge of the screen
+//!             (top, bottom, left or right). It holds the small resting pill and, when
+//!             opened, the glass plate. It is click-through while resting.
 //!
-//! A light background watcher checks where the cursor is. When it touches the top
-//! edge near the middle, the island grows ("glance"); if the cursor stays there for a
-//! moment, it opens into the glass plate ("open"). Moving away folds it back up.
+//! A light background watcher checks where the cursor is. When it rests on the pill
+//! itself, the pill grows ("glance"); if the cursor stays for a moment, or the pill is
+//! clicked, it opens into the glass plate ("open"). Moving away folds it back up.
+//! The pill can be dragged to another edge; it snaps there and is remembered.
 //!
 //! The island can be switched off completely (tray menu, the plate, or the full window),
 //! e.g. before an exam. The choice is remembered after a restart.
@@ -18,14 +20,54 @@ use std::time::{Duration, Instant};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent, Wry};
+use tauri::{
+    AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewWindow, WindowEvent, Wry,
+};
+
+// ---------------------------------------------------------------------------
+// Shared state
+// ---------------------------------------------------------------------------
 
 /// Set when the plate asks to fold up straight away (e.g. after opening the full window).
 struct FoldRequest(AtomicBool);
+/// Set when the pill is clicked, to open the plate without waiting.
+struct OpenRequest(AtomicBool);
+/// True while the pill is being dragged; the watcher pauses.
+struct Dragging(AtomicBool);
 /// Whether the island is switched on.
 struct IslandEnabled(AtomicBool);
 /// The tray's "Show island" tick box, kept so it can follow changes made elsewhere.
 struct IslandToggle(Mutex<Option<CheckMenuItem<Wry>>>);
+/// Which edge the island sits on, and how far along it (0.0 = start, 1.0 = end).
+struct Dock(Mutex<(Edge, f64)>);
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl Edge {
+    fn name(self) -> &'static str {
+        match self {
+            Edge::Top => "top",
+            Edge::Bottom => "bottom",
+            Edge::Left => "left",
+            Edge::Right => "right",
+        }
+    }
+    fn parse(text: &str) -> Option<Edge> {
+        match text {
+            "top" => Some(Edge::Top),
+            "bottom" => Some(Edge::Bottom),
+            "left" => Some(Edge::Left),
+            "right" => Some(Edge::Right),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum IslandState {
@@ -44,38 +86,134 @@ impl IslandState {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sizes — these match island.html (logical pixels)
+// ---------------------------------------------------------------------------
+
+/// Gap between the screen edge and the pill / plate.
+const EDGE_GAP: f64 = 6.0;
+/// Resting pill.
+const REST_W: f64 = 132.0;
+const REST_H: f64 = 30.0;
+/// Glancing pill.
+const GLANCE_W: f64 = 340.0;
+const GLANCE_H: f64 = 56.0;
+/// Open plate.
+const PLATE_W: f64 = 960.0;
+const PLATE_H: f64 = 560.0;
+
 /// How often the watcher checks the cursor.
 const POLL_MS: u64 = 40;
-/// How long the cursor rests at the top before the plate opens.
+/// How long the cursor rests on the pill before the plate opens.
 const OPEN_DELAY_MS: u64 = 350;
 /// How long the cursor can be away from the plate before it folds up.
 const CLOSE_DELAY_MS: u64 = 200;
-/// Distance from the top edge that counts as "touching" it (logical pixels).
-const TOP_EDGE: f64 = 3.0;
-/// While glancing, the cursor may drift this far down without closing (logical pixels).
-const GLANCE_DEPTH: f64 = 80.0;
-/// Half the width of the trigger zone, centred on the screen (logical pixels).
-/// Keeps browser tabs and window buttons in the corners free.
-const CENTRE_HALF_WIDTH: f64 = 320.0;
-/// Extra margin around the open plate before it counts as "left" (logical pixels).
+/// Extra room around the pill that still counts as "on it" (logical pixels).
+const PILL_MARGIN: f64 = 4.0;
+/// Extra room around the glancing pill / open plate before it counts as "left".
+const GLANCE_MARGIN: f64 = 12.0;
 const PLATE_MARGIN: f64 = 24.0;
-/// Size of the open plate as drawn in island.html (logical pixels): 960 wide,
-/// 560 tall plus its 6 px gap from the top edge.
-const PLATE_WIDTH: f64 = 960.0;
-const PLATE_BOTTOM: f64 = 566.0;
 
-/// Places the island at the top-centre of the given monitor area.
-fn place_island(island: &WebviewWindow, mon_x: i32, mon_y: i32, mon_width: u32) {
-    if let Ok(size) = island.outer_size() {
-        let x = mon_x + (mon_width as i32 - size.width as i32) / 2;
-        let _ = island.set_position(PhysicalPosition::new(x, mon_y));
+/// A rectangle in physical screen pixels.
+#[derive(Clone, Copy)]
+struct Rect {
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+}
+
+impl Rect {
+    fn contains(&self, x: f64, y: f64, margin: f64) -> bool {
+        x >= self.left - margin && x <= self.right + margin && y >= self.top - margin && y <= self.bottom + margin
     }
 }
 
-/// A small marker file: present means "island switched off".
-fn island_off_file(app: &AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("island-off"))
+/// Where an element of logical size (w, h), drawn against `edge` inside the island
+/// window, sits on screen.
+fn element_rect(island: &WebviewWindow, edge: Edge, w: f64, h: f64) -> Option<Rect> {
+    let pos = island.outer_position().ok()?;
+    let size = island.outer_size().ok()?;
+    let scale = island.scale_factor().ok()?;
+    let (wx, wy) = (pos.x as f64, pos.y as f64);
+    let (ww, wh) = (size.width as f64, size.height as f64);
+    let (ew, eh, gap) = (w * scale, h * scale, EDGE_GAP * scale);
+    let (left, top) = match edge {
+        Edge::Top => (wx + (ww - ew) / 2.0, wy + gap),
+        Edge::Bottom => (wx + (ww - ew) / 2.0, wy + wh - gap - eh),
+        Edge::Left => (wx + gap, wy + (wh - eh) / 2.0),
+        Edge::Right => (wx + ww - gap - ew, wy + (wh - eh) / 2.0),
+    };
+    Some(Rect { left, top, right: left + ew, bottom: top + eh })
 }
+
+/// The usable area of a monitor (leaving out the taskbar).
+fn usable_area(mon: &Monitor) -> (f64, f64, f64, f64) {
+    let area = mon.work_area();
+    (
+        area.position.x as f64,
+        area.position.y as f64,
+        area.size.width as f64,
+        area.size.height as f64,
+    )
+}
+
+/// Moves the island window so it sits on `edge` of `mon`, `along` of the way (0..1).
+fn place_island(island: &WebviewWindow, mon: &Monitor, edge: Edge, along: f64) {
+    let Ok(size) = island.outer_size() else { return };
+    let (mx, my, mw, mh) = usable_area(mon);
+    let (ww, wh) = (size.width as f64, size.height as f64);
+    let along = along.clamp(0.0, 1.0);
+    let (x, y) = match edge {
+        Edge::Top => (mx + along * (mw - ww).max(0.0), my),
+        Edge::Bottom => (mx + along * (mw - ww).max(0.0), my + mh - wh),
+        Edge::Left => (mx, my + along * (mh - wh).max(0.0)),
+        Edge::Right => (mx + mw - ww, my + along * (mh - wh).max(0.0)),
+    };
+    let _ = island.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+}
+
+fn monitor_at(island: &WebviewWindow, x: f64, y: f64) -> Option<Monitor> {
+    let monitors = island.available_monitors().ok()?;
+    monitors.into_iter().find(|m| {
+        let p = m.position();
+        let s = m.size();
+        x >= p.x as f64 && x < p.x as f64 + s.width as f64 && y >= p.y as f64 && y < p.y as f64 + s.height as f64
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Remembered settings (small files in the StillLife config folder)
+// ---------------------------------------------------------------------------
+
+fn config_file(app: &AppHandle, name: &str) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join(name))
+}
+
+fn write_config(app: &AppHandle, name: &str, text: &str) {
+    if let Some(file) = config_file(app, name) {
+        if let Some(dir) = file.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(file, text);
+    }
+}
+
+fn read_dock(app: &AppHandle) -> (Edge, f64) {
+    config_file(app, "island-dock")
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|text| {
+            let mut parts = text.split_whitespace();
+            let edge = Edge::parse(parts.next()?)?;
+            let along = parts.next()?.parse::<f64>().ok()?;
+            Some((edge, along))
+        })
+        .unwrap_or((Edge::Top, 0.5))
+}
+
+// ---------------------------------------------------------------------------
+// Island on/off
+// ---------------------------------------------------------------------------
 
 /// Switches the island on or off everywhere and remembers the choice.
 fn set_island(app: &AppHandle, enabled: bool) {
@@ -97,19 +235,20 @@ fn set_island(app: &AppHandle, enabled: bool) {
         }
     }
 
-    if let Some(file) = island_off_file(app) {
-        if enabled {
-            let _ = std::fs::remove_file(&file);
-        } else {
-            if let Some(dir) = file.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let _ = std::fs::write(&file, "off");
+    if enabled {
+        if let Some(file) = config_file(app, "island-off") {
+            let _ = std::fs::remove_file(file);
         }
+    } else {
+        write_config(app, "island-off", "off");
     }
 
     let _ = app.emit("island-enabled", enabled);
 }
+
+// ---------------------------------------------------------------------------
+// The watcher
+// ---------------------------------------------------------------------------
 
 fn watch_cursor(app: AppHandle) {
     std::thread::spawn(move || {
@@ -124,65 +263,39 @@ fn watch_cursor(app: AppHandle) {
                 state = IslandState::Rest;
                 continue;
             }
-
-            let Some(island) = app.get_webview_window("island") else {
+            // Being dragged: let the drag finish first.
+            if app.state::<Dragging>().0.load(Ordering::SeqCst) {
+                since = Instant::now();
                 continue;
-            };
-            let Ok(cursor) = island.cursor_position() else {
-                continue;
-            };
-            let Ok(monitors) = island.available_monitors() else {
-                continue;
-            };
+            }
 
-            // The monitor the cursor is on.
-            let Some(mon) = monitors.into_iter().find(|m| {
-                let p = m.position();
-                let s = m.size();
-                cursor.x >= p.x as f64
-                    && cursor.x < p.x as f64 + s.width as f64
-                    && cursor.y >= p.y as f64
-                    && cursor.y < p.y as f64 + s.height as f64
-            }) else {
-                continue;
-            };
+            let Some(island) = app.get_webview_window("island") else { continue };
+            let Ok(cursor) = island.cursor_position() else { continue };
+            let Ok(scale) = island.scale_factor() else { continue };
+            let edge = app.state::<Dock>().0.lock().map(|d| d.0).unwrap_or(Edge::Top);
 
-            let scale = mon.scale_factor();
-            let mon_pos = *mon.position();
-            let mon_size = *mon.size();
-            let centre_x = mon_pos.x as f64 + mon_size.width as f64 / 2.0;
-            let in_centre = (cursor.x - centre_x).abs() <= CENTRE_HALF_WIDTH * scale;
-            let from_top = cursor.y - mon_pos.y as f64;
-
-            let touching_top = in_centre && from_top <= TOP_EDGE * scale;
-            let near_top = in_centre && from_top <= GLANCE_DEPTH * scale;
-
-            // The visible plate sits centred at the top of the (larger, transparent) window,
-            // which leaves room for its shadow. Measure against the plate itself.
-            let near_plate = match (island.outer_position(), island.outer_size()) {
-                (Ok(p), Ok(s)) => {
-                    let m = PLATE_MARGIN * scale;
-                    let plate_w = PLATE_WIDTH * scale;
-                    let left = p.x as f64 + (s.width as f64 - plate_w) / 2.0;
-                    let top = p.y as f64;
-                    let bottom = top + PLATE_BOTTOM * scale;
-                    cursor.x >= left - m
-                        && cursor.x <= left + plate_w + m
-                        && cursor.y >= top - m
-                        && cursor.y <= bottom + m
-                }
-                _ => false,
-            };
+            let on_pill = element_rect(&island, edge, REST_W, REST_H)
+                .map(|r| r.contains(cursor.x, cursor.y, PILL_MARGIN * scale))
+                .unwrap_or(false);
+            let on_glance = element_rect(&island, edge, GLANCE_W, GLANCE_H)
+                .map(|r| r.contains(cursor.x, cursor.y, GLANCE_MARGIN * scale))
+                .unwrap_or(false);
+            let near_plate = element_rect(&island, edge, PLATE_W, PLATE_H)
+                .map(|r| r.contains(cursor.x, cursor.y, PLATE_MARGIN * scale))
+                .unwrap_or(false);
 
             let fold_now = app.state::<FoldRequest>().0.swap(false, Ordering::SeqCst);
+            let open_now = app.state::<OpenRequest>().0.swap(false, Ordering::SeqCst);
 
             let next = if fold_now && state != IslandState::Rest {
                 Some(IslandState::Rest)
+            } else if open_now && state != IslandState::Open {
+                Some(IslandState::Open)
             } else {
                 match state {
-                    IslandState::Rest => touching_top.then_some(IslandState::Glance),
+                    IslandState::Rest => on_pill.then_some(IslandState::Glance),
                     IslandState::Glance => {
-                        if !near_top {
+                        if !on_glance {
                             Some(IslandState::Rest)
                         } else if since.elapsed() >= Duration::from_millis(OPEN_DELAY_MS) {
                             Some(IslandState::Open)
@@ -204,12 +317,9 @@ fn watch_cursor(app: AppHandle) {
             };
 
             if let Some(next) = next {
-                if next == IslandState::Glance {
-                    // Follow the cursor to whichever screen it is on.
-                    place_island(&island, mon_pos.x, mon_pos.y, mon_size.width);
-                }
-                // Only the open plate takes clicks; otherwise clicks pass straight through.
-                let _ = island.set_ignore_cursor_events(next != IslandState::Open);
+                // Resting: clicks pass straight through. Glance/open: the pill can be
+                // clicked or dragged, and the plate used.
+                let _ = island.set_ignore_cursor_events(next == IslandState::Rest);
                 state = next;
                 since = Instant::now();
                 let _ = app.emit_to("island", "island-state", next.name());
@@ -217,6 +327,10 @@ fn watch_cursor(app: AppHandle) {
         }
     });
 }
+
+// ---------------------------------------------------------------------------
+// Commands called from the pages
+// ---------------------------------------------------------------------------
 
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -233,6 +347,73 @@ fn open_full_window(app: AppHandle, fold: tauri::State<'_, FoldRequest>) {
     show_main(&app);
 }
 
+/// A click on the pill opens the plate straight away.
+#[tauri::command]
+fn open_island_now(open: tauri::State<'_, OpenRequest>) {
+    open.0.store(true, Ordering::SeqCst);
+}
+
+/// Which edge the island is on ("top", "bottom", "left", "right").
+#[tauri::command]
+fn island_dock(dock: tauri::State<'_, Dock>) -> String {
+    dock.0.lock().map(|d| d.0.name().to_string()).unwrap_or_else(|_| "top".into())
+}
+
+#[tauri::command]
+fn drag_island_start(dragging: tauri::State<'_, Dragging>) {
+    dragging.0.store(true, Ordering::SeqCst);
+}
+
+/// Moves the island window by (dx, dy) physical pixels while dragging.
+#[tauri::command]
+fn drag_island_by(app: AppHandle, dx: i32, dy: i32) {
+    if let Some(island) = app.get_webview_window("island") {
+        if let Ok(pos) = island.outer_position() {
+            let _ = island.set_position(PhysicalPosition::new(pos.x + dx, pos.y + dy));
+        }
+    }
+}
+
+/// Drop: snap to the nearest edge of the screen under the cursor and remember it.
+#[tauri::command]
+fn drag_island_end(app: AppHandle) {
+    if let Some(island) = app.get_webview_window("island") {
+        if let (Ok(cursor), Ok(size)) = (island.cursor_position(), island.outer_size()) {
+            if let Some(mon) = monitor_at(&island, cursor.x, cursor.y) {
+                let (mx, my, mw, mh) = usable_area(&mon);
+                let to_top = cursor.y - my;
+                let to_bottom = my + mh - cursor.y;
+                let to_left = cursor.x - mx;
+                let to_right = mx + mw - cursor.x;
+                let nearest = to_top.min(to_bottom).min(to_left).min(to_right);
+                let edge = if nearest == to_top {
+                    Edge::Top
+                } else if nearest == to_bottom {
+                    Edge::Bottom
+                } else if nearest == to_left {
+                    Edge::Left
+                } else {
+                    Edge::Right
+                };
+                let (ww, wh) = (size.width as f64, size.height as f64);
+                let along = match edge {
+                    Edge::Top | Edge::Bottom => (cursor.x - ww / 2.0 - mx) / (mw - ww).max(1.0),
+                    Edge::Left | Edge::Right => (cursor.y - wh / 2.0 - my) / (mh - wh).max(1.0),
+                }
+                .clamp(0.0, 1.0);
+
+                place_island(&island, &mon, edge, along);
+                if let Ok(mut dock) = app.state::<Dock>().0.lock() {
+                    *dock = (edge, along);
+                }
+                write_config(&app, "island-dock", &format!("{} {:.4}", edge.name(), along));
+                let _ = app.emit_to("island", "island-dock", edge.name());
+            }
+        }
+    }
+    app.state::<Dragging>().0.store(false, Ordering::SeqCst);
+}
+
 /// Called from the plate and the full window to switch the island on or off.
 #[tauri::command]
 fn set_island_enabled(app: AppHandle, enabled: bool) {
@@ -245,23 +426,72 @@ fn island_enabled(state: tauri::State<'_, IslandEnabled>) -> bool {
     state.0.load(Ordering::SeqCst)
 }
 
+/// Where notes are saved on this computer.
+fn notes_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|dir| dir.join("notes.json"))
+}
+
+/// Returns the saved notes as JSON text ("[]" when there are none yet).
+#[tauri::command]
+fn load_notes(app: AppHandle) -> String {
+    notes_file(&app)
+        .and_then(|file| std::fs::read_to_string(file).ok())
+        .unwrap_or_else(|| "[]".to_string())
+}
+
+/// Saves the notes safely: writes a temporary file first, keeps the previous version
+/// as notes.bak.json, then swaps the new file in. Tells every window that notes changed.
+#[tauri::command]
+fn save_notes(app: AppHandle, window: tauri::Window, data: String) -> Result<(), String> {
+    let file = notes_file(&app).ok_or("Could not find the StillLife data folder")?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let temp = file.with_extension("json.tmp");
+    std::fs::write(&temp, data).map_err(|e| e.to_string())?;
+    if file.exists() {
+        let _ = std::fs::copy(&file, file.with_extension("bak.json"));
+    }
+    std::fs::rename(&temp, &file).map_err(|e| e.to_string())?;
+    let _ = app.emit("notes-changed", window.label().to_string());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Start-up
+// ---------------------------------------------------------------------------
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(FoldRequest(AtomicBool::new(false)))
+        .manage(OpenRequest(AtomicBool::new(false)))
+        .manage(Dragging(AtomicBool::new(false)))
         .manage(IslandEnabled(AtomicBool::new(true)))
         .manage(IslandToggle(Mutex::new(None)))
+        .manage(Dock(Mutex::new((Edge::Top, 0.5))))
         .invoke_handler(tauri::generate_handler![
             open_full_window,
+            open_island_now,
+            island_dock,
+            drag_island_start,
+            drag_island_by,
+            drag_island_end,
             set_island_enabled,
-            island_enabled
+            island_enabled,
+            load_notes,
+            save_notes
         ])
         .setup(|app| {
-            // Remembered choice from last time.
-            let enabled = island_off_file(app.handle())
+            // Remembered choices from last time.
+            let enabled = config_file(app.handle(), "island-off")
                 .map(|f| !f.exists())
                 .unwrap_or(true);
             app.state::<IslandEnabled>().0.store(enabled, Ordering::SeqCst);
+            let (edge, along) = read_dock(app.handle());
+            if let Ok(mut dock) = app.state::<Dock>().0.lock() {
+                *dock = (edge, along);
+            }
 
             // Tray icon, so StillLife can keep running with the main window closed.
             let open_item = MenuItem::with_id(app, "open", "Open StillLife", true, None::<&str>)?;
@@ -291,11 +521,11 @@ pub fn run() {
                 *guard = Some(island_item.clone());
             }
 
-            // Start the island resting, click-through, at the top-centre of the main screen.
+            // Start the island resting and click-through, on its remembered edge.
             if let Some(island) = app.get_webview_window("island") {
                 let _ = island.set_ignore_cursor_events(true);
                 if let Ok(Some(mon)) = island.primary_monitor() {
-                    place_island(&island, mon.position().x, mon.position().y, mon.size().width);
+                    place_island(&island, &mon, edge, along);
                 }
                 if !enabled {
                     let _ = island.hide();
