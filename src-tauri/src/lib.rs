@@ -1,4 +1,4 @@
-//! StillLife — v0.3.1
+//! StillLife — v0.4.0
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.

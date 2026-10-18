@@ -55,7 +55,20 @@
     x: '<path d="M6 6l12 12M18 6L6 18"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+    expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
     back: '<path d="M15 18l-6-6 6-6"/>',
+    view: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+    redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
+    color: '<path d="M6 20l6-16 6 16M8.5 14h7"/>',
+    mark: '<path d="M9 11l-5 5v4h4l5-5M14 6l4 4M12 8l4 4 4-4-4-4z"/>',
+    left: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>',
+    center: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>',
+    right: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
+    link: '<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
+    hr: '<path d="M4 12h16"/>',
+    outline: '<path d="M4 6h10M7 12h13M7 18h13M4 12h.01M4 18h.01"/>',
+    print: '<path d="M7 9V3h10v6M7 18H4v-7h16v7h-3M7 14h10v7H7z"/>',
     bold: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>',
     italic: '<path d="M11 5h6M7 19h6M14 5l-4 14"/>',
     underline: '<path d="M7 4v7a5 5 0 0 0 10 0V4M5 20h14"/>',
@@ -97,9 +110,24 @@
   // Only simple formatting survives; anything else (scripts, styles, event handlers,
   // odd links) is stripped. Parsing happens in an inert document, so nothing runs.
   const ALLOWED = {
-    P: [], DIV: [], BR: [], H1: [], H2: [], H3: [], B: [], STRONG: [], I: [], EM: [], U: [],
-    S: [], STRIKE: [], UL: [], OL: [], LI: [], BLOCKQUOTE: [], HR: [], CODE: [], PRE: [], SPAN: [], A: ["href"],
+    P: ["style"], DIV: ["style"], BR: [], H1: ["style"], H2: ["style"], H3: ["style"], B: [], STRONG: [], I: [], EM: [], U: [],
+    S: [], STRIKE: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: [], CODE: [], PRE: [], SPAN: ["style"],
+    FONT: ["color"], A: ["href"],
   };
+  const SAFE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]+)$/i;
+  // Only text colour, highlight and alignment survive inside style="".
+  function safeStyle(value) {
+    const keep = [];
+    for (const part of String(value).split(";")) {
+      const i = part.indexOf(":");
+      if (i < 0) continue;
+      const prop = part.slice(0, i).trim().toLowerCase();
+      const val = part.slice(i + 1).trim();
+      if ((prop === "color" || prop === "background-color") && SAFE_COLOR.test(val)) keep.push(prop + ": " + val);
+      else if (prop === "text-align" && /^(left|center|right|justify)$/i.test(val)) keep.push(prop + ": " + val.toLowerCase());
+    }
+    return keep.join("; ");
+  }
   const DROP = ["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "TEMPLATE", "SVG", "MATH", "FORM", "INPUT", "BUTTON", "TEXTAREA", "SELECT", "IMG", "VIDEO", "AUDIO"];
   function cleanNode(node) {
     for (const child of Array.from(node.childNodes)) {
@@ -112,7 +140,14 @@
           child.replaceWith(...Array.from(child.childNodes));
         } else {
           for (const attr of Array.from(child.attributes)) {
-            const keep = ALLOWED[tag].includes(attr.name) && !(attr.name === "href" && !/^(https?:|mailto:)/i.test(attr.value.trim()));
+            let keep = ALLOWED[tag].includes(attr.name);
+            if (keep && attr.name === "href") keep = /^(https?:|mailto:)/i.test(attr.value.trim());
+            if (keep && attr.name === "color") keep = SAFE_COLOR.test(attr.value.trim());
+            if (keep && attr.name === "style") {
+              const clean = safeStyle(attr.value);
+              if (clean) child.setAttribute("style", clean);
+              else keep = false;
+            }
             if (!keep) child.removeAttribute(attr.name);
           }
           cleanNode(child);
@@ -134,7 +169,9 @@
   }
 
   // ---------- storage ----------
-  let data = { version: 2, labels: [], notes: [] };
+  const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m" };
+  const TEXT_SIZES = { s: "Small", m: "Medium", l: "Large", xl: "Extra large" };
+  let data = { version: 2, labels: [], notes: [], settings: Object.assign({}, DEFAULT_SETTINGS) };
   let loadFailed = false;
   let saveTimer = null;
 
@@ -163,6 +200,7 @@
       }
       if (n.type === "agenda" && !Array.isArray(n.items)) n.items = [];
     }
+    parsed.settings = Object.assign({}, DEFAULT_SETTINGS, parsed.settings || {});
     parsed.version = 2;
     return parsed;
   }
@@ -175,7 +213,7 @@
     } catch (e) {
       // Never overwrite a file we could not read.
       loadFailed = true;
-      data = { version: 2, labels: [], notes: [] };
+      data = { version: 2, labels: [], notes: [], settings: Object.assign({}, DEFAULT_SETTINGS) };
     }
   }
   function save() {
@@ -199,7 +237,23 @@
   // ---------- the view ----------
   function mount(root, options) {
     const opts = options || {};
-    const view = { label: "all", type: "all", archive: false, editLabels: false, doc: null };
+    const view = { label: "all", type: "all", archive: false, editLabels: false, doc: null, expanded: null, focus: null };
+    const IMPORTANCE_RANK = { high: 0, medium: 1, low: 2 };
+    function compare(a, b) {
+      const sort = data.settings.sort;
+      if (sort === "created") return (b.created || 0) - (a.created || 0);
+      if (sort === "importance") {
+        const d = (IMPORTANCE_RANK[a.importance] ?? 2) - (IMPORTANCE_RANK[b.importance] ?? 2);
+        return d || (b.edited || 0) - (a.edited || 0);
+      }
+      if (sort === "due") {
+        if (a.due && b.due) return a.due < b.due ? -1 : a.due > b.due ? 1 : (b.edited || 0) - (a.edited || 0);
+        if (a.due) return -1;
+        if (b.due) return 1;
+        return (b.edited || 0) - (a.edited || 0);
+      }
+      return (b.edited || 0) - (a.edited || 0);
+    }
     let menu = null;
     let toast = null;
     let toastTimer = null;
@@ -222,7 +276,7 @@
         .filter((n) => (view.archive ? n.resolved : !n.resolved))
         .filter((n) => view.label === "all" || n.label === view.label)
         .filter((n) => view.type === "all" || n.type === view.type)
-        .sort((a, b) => (view.archive ? (b.resolvedAt || 0) - (a.resolvedAt || 0) : (b.edited || 0) - (a.edited || 0)));
+        .sort((a, b) => (view.archive ? (b.resolvedAt || 0) - (a.resolvedAt || 0) : compare(a, b)));
     }
 
     function newNote(type) {
@@ -357,12 +411,29 @@
         text: view.archive ? "Back to notes" : "Resolved" + (resolvedCount ? " (" + resolvedCount + ")" : ""),
       });
 
+      const VIEWS = { blocks: "Blocks", list: "List", details: "Details" };
+      const SORTS = { edited: "Date edited", created: "Date created", importance: "Importance", due: "Due date" };
+      const viewBtn = el("button", {
+        class: "sl-new alt",
+        "aria-haspopup": "true",
+        onclick: (e) => openChoices(e.currentTarget, [
+          { heading: "VIEW" },
+          ...Object.entries(VIEWS).map(([k, v]) => ({ text: v, on: data.settings.view === k, pick: () => { data.settings.view = k; save(); } })),
+          { heading: "SORT BY" },
+          ...Object.entries(SORTS).map(([k, v]) => ({ text: v, on: data.settings.sort === k, pick: () => { data.settings.sort = k; save(); } })),
+          { heading: "" },
+          { text: "Pinned on top", check: true, on: data.settings.pinnedTop, pick: () => { data.settings.pinnedTop = !data.settings.pinnedTop; save(); } },
+          { heading: "TEXT SIZE" },
+          ...Object.entries(TEXT_SIZES).map(([k, v]) => ({ text: v, on: data.settings.textSize === k, pick: () => { data.settings.textSize = k; save(); } })),
+        ]),
+      }, svg(ICON.view, 13), VIEWS[data.settings.view] + " \u00B7 " + SORTS[data.settings.sort]);
+
       const newAgenda = el("button", { class: "sl-new", onclick: () => newNote("agenda") }, svg(ICON.plus, 13), "Agenda");
       const newDoc = el("button", { class: "sl-new", onclick: () => newNote("doc") }, svg(ICON.plus, 13), "Doc");
 
       return el("div", { class: "sl-bar" },
         el("div", { class: "sl-group" }, tabs, types),
-        el("div", { class: "sl-group" }, archiveBtn, newAgenda, newDoc));
+        el("div", { class: "sl-group" }, viewBtn, archiveBtn, newAgenda, newDoc));
     }
 
     // ---------- cards ----------
@@ -428,10 +499,15 @@
       return c;
     }
 
-    function agendaCard(note) {
+    function agendaCard(note, big) {
       const c = el("article", {
-        class: "sl-card c-" + (note.color || "sage") + (allDone(note) && !note.resolved ? " ready" : "") + (note.resolved ? " archived" : ""),
+        class: "sl-card c-" + (note.color || "sage") + (allDone(note) && !note.resolved ? " ready" : "") + (note.resolved ? " archived" : "") + (big ? " big" : ""),
         "data-id": note.id,
+        ondblclick: (e) => {
+          if (big || e.target.closest("input, button, label")) return;
+          view.focus = note.id;
+          render();
+        },
       });
 
       const title = el("input", {
@@ -453,6 +529,12 @@
       if (!note.resolved) {
         const box = el("input", { type: "checkbox", "aria-label": "All resolved: clear this agenda", onchange: () => resolve(note) });
         head.append(el("label", { class: "sl-resolved", title: "Tick when everything is done to clear this agenda" }, box, "All resolved"));
+        head.append(el("button", {
+          class: "sl-icon-btn",
+          "aria-label": big ? "Shrink back" : "Zoom in",
+          title: big ? "Shrink back (Esc)" : "Zoom in (or double-click the card)",
+          onclick: (e) => { e.stopPropagation(); view.focus = big ? null : note.id; render(); },
+        }, svg(big ? ICON.x : ICON.expand, 13)));
         headButtons(note, head);
       }
       c.append(head);
@@ -527,6 +609,98 @@
 
     const card = (note) => (note.type === "doc" ? docCard(note) : agendaCard(note));
 
+    // Clicking a row: docs open; agendas unfold under the row.
+    function rowClick(note, e) {
+      if (e.target.closest("button, input, label")) return;
+      if (note.type === "doc") openDoc(note.id);
+      else { view.expanded = view.expanded === note.id ? null : note.id; render(); }
+    }
+    function secondLine(note) {
+      if (note.type === "doc") return htmlToText(note.html) || "Empty doc";
+      const done = note.items.filter((i) => i.done).length;
+      const next = note.items.find((i) => !i.done);
+      return done + " of " + note.items.length + " done" + (next ? " \u00B7 next: " + next.text : "");
+    }
+    function rowButtons(note) {
+      const wrap = el("div", { class: "sl-row-btns" });
+      if (!note.resolved) headButtons(note, wrap);
+      else wrap.append(
+        el("button", { class: "sl-new alt sl-small", onclick: () => restore(note), text: "Restore" }),
+        el("button", { class: "sl-new alt sl-small", onclick: () => remove(note), text: "Delete" }));
+      return wrap;
+    }
+    function listView(list) {
+      const box = el("div", { class: "sl-list" });
+      for (const note of list) {
+        const due = dueInfo(note.due);
+        const label = labelById(note.label);
+        const row = el("div", {
+          class: "sl-row-item" + (view.expanded === note.id ? " open" : ""),
+          tabindex: "0",
+          "data-id": note.id,
+          onclick: (e) => rowClick(note, e),
+          onkeydown: (e) => { if (e.key === "Enter" && e.target === row) rowClick(note, e); },
+        },
+          el("span", { class: "sl-swatch", style: "background: var(--c-" + (note.color || "oat") + ")" }, svg(note.type === "doc" ? ICON.doc : ICON.agenda, 13)),
+          el("div", { class: "sl-row-text" },
+            el("span", { class: "sl-row-title", text: note.title || (note.type === "doc" ? "Untitled doc" : "Untitled agenda") }),
+            el("span", { class: "sl-row-sub", text: secondLine(note) })),
+          el("div", { class: "sl-row-chips" },
+            note.importance === "high" || note.importance === "medium" ? el("span", { class: "sl-chip " + note.importance, text: IMPORTANCE[note.importance] }) : null,
+            due && !note.resolved ? el("span", { class: "sl-chip " + due.cls, text: due.text }) : null,
+            label ? el("span", { class: "sl-chip", style: "background: var(--c-" + label.color + ")", text: label.name }) : null,
+            el("span", { class: "sl-row-when", text: ago(note.edited || note.created) })),
+          rowButtons(note));
+        box.append(row);
+        if (view.expanded === note.id && note.type === "agenda") box.append(el("div", { class: "sl-row-open" }, agendaCard(note)));
+      }
+      return box;
+    }
+    function detailsView(list) {
+      const SORTABLE = { importance: "Importance", due: "Due", edited: "Edited" };
+      const head = el("div", { class: "sl-table-head" });
+      for (const [key, text] of [["", ""], ["", "Title"], ["", "Label"], ["importance", "Importance"], ["due", "Due"], ["edited", "Edited"], ["", ""]]) {
+        if (key) {
+          head.append(el("button", {
+            class: "sl-th" + (data.settings.sort === key ? " on" : ""),
+            "aria-label": "Sort by " + SORTABLE[key],
+            onclick: () => { data.settings.sort = key; save(); render(); },
+            text: text + (data.settings.sort === key ? " \u2193" : ""),
+          }));
+        } else head.append(el("span", { class: "sl-th", text }));
+      }
+      const table = el("div", { class: "sl-table", role: "table" }, head);
+      for (const note of list) {
+        const due = dueInfo(note.due);
+        const label = labelById(note.label);
+        const row = el("div", {
+          class: "sl-tr" + (view.expanded === note.id ? " open" : ""),
+          role: "row",
+          tabindex: "0",
+          "data-id": note.id,
+          onclick: (e) => rowClick(note, e),
+          onkeydown: (e) => { if (e.key === "Enter" && e.target === row) rowClick(note, e); },
+        },
+          el("span", { class: "sl-swatch", style: "background: var(--c-" + (note.color || "oat") + ")" }, svg(note.type === "doc" ? ICON.doc : ICON.agenda, 13)),
+          el("span", { class: "sl-td sl-td-title" },
+            el("strong", { text: note.title || (note.type === "doc" ? "Untitled doc" : "Untitled agenda") }),
+            note.type === "agenda" ? el("span", { class: "sl-row-sub", text: " \u00B7 " + note.items.filter((i) => i.done).length + " of " + note.items.length }) : null),
+          el("span", { class: "sl-td", text: label ? label.name : "\u2014" }),
+          el("span", { class: "sl-td" }, note.importance === "high" || note.importance === "medium" ? el("span", { class: "sl-chip " + note.importance, text: IMPORTANCE[note.importance] }) : el("span", { class: "sl-faint", text: "Low" })),
+          el("span", { class: "sl-td" + (due && due.cls === "overdue" ? " sl-red" : ""), text: due && !note.resolved ? due.text.replace(/^Due /, "") : "\u2014" }),
+          el("span", { class: "sl-td sl-faint", text: ago(note.edited || note.created) }),
+          rowButtons(note));
+        table.append(row);
+        if (view.expanded === note.id && note.type === "agenda") table.append(el("div", { class: "sl-row-open" }, agendaCard(note)));
+      }
+      return table;
+    }
+    function group(list) {
+      if (data.settings.view === "list") return listView(list);
+      if (data.settings.view === "details") return detailsView(list);
+      return el("div", { class: "sl-grid" }, ...list.map(card));
+    }
+
     // ---------- the doc page ----------
     function docPage(note) {
       const status = el("span", { class: "sl-doc-status" });
@@ -557,42 +731,119 @@
         updateStatus();
       }
 
-      // Formatting toolbar
+      // ----- keep the text selection while using toolbar pop-ups -----
+      let savedRange = null;
+      function saveSel() {
+        const sel = window.getSelection();
+        if (sel.rangeCount && body.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+      }
+      function restoreSel() {
+        body.focus();
+        if (savedRange) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+        }
+      }
+      function run(cmd, value) {
+        restoreSel();
+        try { document.execCommand("styleWithCSS", false, true); } catch (e) {}
+        document.execCommand(cmd, false, value === undefined ? null : value);
+        syncBody();
+        refreshTools();
+      }
+
+      // ----- formatting toolbar -----
       const tools = el("div", { class: "sl-doc-tools", role: "toolbar", "aria-label": "Formatting" });
+      const toolButtons = [];
+      function tool(icon, labelText, onClick, cmd, key) {
+        const b = el("button", {
+          class: "sl-tool",
+          "aria-label": labelText,
+          title: labelText + (key ? " (" + key + ")" : ""),
+          onmousedown: (e) => { saveSel(); e.preventDefault(); }, // keep the text selection
+          onclick: (e) => onClick(e.currentTarget),
+        }, svg(icon, 16));
+        if (cmd) { b.dataset.cmd = cmd; toolButtons.push(b); }
+        return b;
+      }
+      const sep = () => el("span", { class: "sl-tool-sep", "aria-hidden": "true" });
+
       const blockSel = el("select", {
         "aria-label": "Text style",
-        onchange: (e) => {
-          body.focus();
-          document.execCommand("formatBlock", false, e.target.value);
-          syncBody();
-        },
+        onmousedown: saveSel,
+        onchange: (e) => run("formatBlock", e.target.value),
       },
         el("option", { value: "P", text: "Normal text" }),
         el("option", { value: "H1", text: "Title" }),
         el("option", { value: "H2", text: "Heading" }),
         el("option", { value: "H3", text: "Subheading" }),
         el("option", { value: "BLOCKQUOTE", text: "Quote" }));
-      tools.append(blockSel);
-      const toolButtons = [];
-      for (const [cmd, icon, labelText, key] of [
-        ["bold", ICON.bold, "Bold", "Ctrl+B"],
-        ["italic", ICON.italic, "Italic", "Ctrl+I"],
-        ["underline", ICON.underline, "Underline", "Ctrl+U"],
-        ["strikeThrough", ICON.strike, "Strikethrough", ""],
-        ["insertUnorderedList", ICON.ul, "Bulleted list", ""],
-        ["insertOrderedList", ICON.ol, "Numbered list", ""],
-      ]) {
-        const b = el("button", {
-          class: "sl-tool",
-          "aria-label": labelText,
-          title: labelText + (key ? " (" + key + ")" : ""),
-          onmousedown: (e) => e.preventDefault(), // keep the text selection
-          onclick: () => { body.focus(); document.execCommand(cmd, false, null); syncBody(); refreshTools(); },
-        }, svg(icon, 16));
-        b.dataset.cmd = cmd;
-        toolButtons.push(b);
-        tools.append(b);
+
+      const TEXT_COLORS = [["Ink", "#2f2e2b"], ["Brick", "#8a4f45"], ["Clay", "#a3684d"], ["Moss", "#4d6b55"], ["Slate", "#4f6a80"], ["Plum", "#6d5a80"]];
+      const MARKS = [["Butter", "#ece8b0"], ["Lavender", "#ddd7f0"], ["Sage", "#d3dccb"], ["Rose", "#ecd6d1"], ["Mist", "#d2dbe2"], ["None", "transparent"]];
+      function swatchMenu(anchor, title, colors, cmd) {
+        closeMenu();
+        menu = el("div", { class: "sl-menu sl-color-menu", role: "dialog", "aria-label": title },
+          el("span", { class: "sl-choice-head", text: title.toUpperCase() }));
+        const grid = el("div", { class: "sl-swatches" });
+        for (const [name, value] of colors) {
+          grid.append(el("button", {
+            style: "background:" + (value === "transparent" ? "#ffffff; box-shadow: inset 0 0 0 1px rgba(47,46,43,0.3)" : value),
+            "aria-label": name,
+            title: name,
+            onmousedown: (e) => e.preventDefault(),
+            onclick: () => { closeMenu(); run(cmd, value); },
+          }));
+        }
+        menu.append(grid);
+        root.append(menu);
+        placeMenu(anchor, 230, 110);
       }
+      function linkMenu(anchor) {
+        closeMenu();
+        const input = el("input", { type: "url", placeholder: "https://", "aria-label": "Link address", class: "sl-link-input" });
+        function apply() {
+          let url = input.value.trim();
+          if (!url) return;
+          if (!/^(https?:|mailto:)/i.test(url)) url = "https://" + url;
+          closeMenu();
+          run("createLink", url);
+        }
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
+        menu = el("div", { class: "sl-menu", role: "dialog", "aria-label": "Add link" },
+          el("label", null, "LINK", input),
+          el("div", { class: "sl-row" },
+            el("button", { onclick: () => { closeMenu(); run("unlink"); }, text: "Remove link" }),
+            el("button", { class: "sl-primary", onclick: apply, text: "Apply" })));
+        root.append(menu);
+        placeMenu(anchor, 230, 130);
+        setTimeout(() => input.focus(), 0);
+      }
+
+      tools.append(
+        tool(ICON.undo, "Undo", () => run("undo"), null, "Ctrl+Z"),
+        tool(ICON.redo, "Redo", () => run("redo"), null, "Ctrl+Y"),
+        sep(), blockSel, sep(),
+        tool(ICON.bold, "Bold", () => run("bold"), "bold", "Ctrl+B"),
+        tool(ICON.italic, "Italic", () => run("italic"), "italic", "Ctrl+I"),
+        tool(ICON.underline, "Underline", () => run("underline"), "underline", "Ctrl+U"),
+        tool(ICON.strike, "Strikethrough", () => run("strikeThrough"), "strikeThrough"),
+        tool(ICON.color, "Text colour", (b) => swatchMenu(b, "Text colour", TEXT_COLORS, "foreColor")),
+        tool(ICON.mark, "Highlight", (b) => swatchMenu(b, "Highlight", MARKS, "hiliteColor")),
+        sep(),
+        tool(ICON.left, "Align left", () => run("justifyLeft"), "justifyLeft"),
+        tool(ICON.center, "Align centre", () => run("justifyCenter"), "justifyCenter"),
+        tool(ICON.right, "Align right", () => run("justifyRight"), "justifyRight"),
+        sep(),
+        tool(ICON.ul, "Bulleted list", () => run("insertUnorderedList"), "insertUnorderedList"),
+        tool(ICON.ol, "Numbered list", () => run("insertOrderedList"), "insertOrderedList"),
+        tool(ICON.link, "Link", (b) => linkMenu(b)),
+        tool(ICON.hr, "Divider line", () => run("insertHorizontalRule")),
+        sep(),
+        tool(ICON.outline, "Show or hide outline", () => { outlineOpen = !outlineOpen; outline.hidden = !outlineOpen; buildOutline(); }),
+        tool(ICON.print, "Print or save as PDF", () => window.print()));
+
       function refreshTools() {
         if (document.activeElement !== body) return;
         for (const b of toolButtons) {
@@ -609,11 +860,59 @@
       document.addEventListener("selectionchange", refreshTools);
       stopDocListeners = () => document.removeEventListener("selectionchange", refreshTools);
 
+      // ----- outline built from the headings -----
+      let outlineOpen = !!opts.full && window.innerWidth > 1000;
+      const outline = el("nav", { class: "sl-outline", "aria-label": "Outline" });
+      outline.hidden = !outlineOpen;
+      function buildOutline() {
+        if (!outlineOpen) return;
+        outline.textContent = "";
+        outline.append(el("span", { class: "sl-choice-head", text: "OUTLINE" }));
+        const heads = body.querySelectorAll("h1, h2, h3");
+        if (!heads.length) {
+          outline.append(el("p", { class: "sl-faint sl-outline-empty", text: "Headings you add appear here. Pick Title, Heading or Subheading, or type # and a space." }));
+          return;
+        }
+        heads.forEach((h) => {
+          outline.append(el("button", {
+            class: "sl-outline-item lvl-" + h.tagName.slice(1),
+            onclick: () => h.scrollIntoView({ behavior: "smooth", block: "start" }),
+            text: h.textContent.trim() || "Untitled heading",
+          }));
+        });
+      }
+
+      // ----- Markdown-style shortcuts: "# ", "## ", "### ", "- ", "* ", "1. ", "> " -----
+      const MD = { "#": "H1", "##": "H2", "###": "H3", ">": "BLOCKQUOTE", "-": "ul", "*": "ul", "1.": "ol" };
+      body.addEventListener("keydown", (e) => {
+        if (e.key !== " ") return;
+        const sel = window.getSelection();
+        if (!sel.rangeCount || !sel.isCollapsed) return;
+        const node = sel.anchorNode;
+        if (!node || node.nodeType !== 3) return;
+        const before = node.textContent.slice(0, sel.anchorOffset);
+        const rule = MD[before];
+        if (!rule) return;
+        const block = node.parentElement && node.parentElement.closest("p, div, h1, h2, h3, li, blockquote");
+        if (block && block !== body && block.firstChild !== node) return;
+        e.preventDefault();
+        const range = document.createRange();
+        range.setStart(node, 0);
+        range.setEnd(node, before.length);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand("delete");
+        if (rule === "ul") document.execCommand("insertUnorderedList");
+        else if (rule === "ol") document.execCommand("insertOrderedList");
+        else document.execCommand("formatBlock", false, rule);
+        syncBody();
+      });
+
       body.addEventListener("focus", () => {
         // New lines become proper paragraphs.
         try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
       });
-      body.addEventListener("input", syncBody);
+      body.addEventListener("input", () => { syncBody(); buildOutline(); });
       body.addEventListener("paste", (e) => {
         // Keep simple formatting from the clipboard, drop everything else.
         e.preventDefault();
@@ -621,6 +920,7 @@
         if (html) document.execCommand("insertHTML", false, cleanHtml(html));
         else document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
         syncBody();
+        buildOutline();
       });
       body.addEventListener("click", (e) => {
         // Never let a link replace the app page.
@@ -643,8 +943,10 @@
       if (due) meta.append(el("span", { class: "sl-chip " + due.cls, text: due.text }));
 
       const paper = el("div", { class: "sl-paper" }, meta, title, body);
-      const page = el("div", { class: "sl-docpage" }, head, tools, el("div", { class: "sl-doc-scroll" }, paper));
+      const page = el("div", { class: "sl-docpage" }, head, tools,
+        el("div", { class: "sl-doc-main" }, outline, el("div", { class: "sl-doc-scroll" }, paper)));
       updateStatus();
+      buildOutline();
       return { page, title, body };
     }
 
@@ -698,6 +1000,35 @@
     function outside(e) {
       if (menu && !menu.contains(e.target)) closeMenu();
     }
+    function placeMenu(anchor, width, height) {
+      const r = root.getBoundingClientRect();
+      const a = anchor.getBoundingClientRect();
+      const left = Math.max(4, Math.min(a.right - r.left - width, r.width - width - 8));
+      let top = a.bottom - r.top + 6;
+      if (top + height > r.height) top = Math.max(4, a.top - r.top - height);
+      menu.style.left = left + "px";
+      menu.style.top = top + "px";
+      setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+    }
+    function openChoices(anchor, items) {
+      closeMenu();
+      menu = el("div", { class: "sl-menu sl-choices", role: "menu" });
+      for (const item of items) {
+        if (item.heading !== undefined) {
+          menu.append(item.heading ? el("span", { class: "sl-choice-head", text: item.heading }) : el("hr", { class: "sl-choice-line" }));
+          continue;
+        }
+        menu.append(el("button", {
+          class: "sl-choice" + (item.on ? " on" : ""),
+          role: item.check ? "menuitemcheckbox" : "menuitemradio",
+          "aria-checked": item.on ? "true" : "false",
+          onclick: () => { item.pick(); closeMenu(); render(); },
+        }, el("span", { class: item.check ? "sl-check" : "sl-radio", "aria-hidden": "true" }), item.text));
+      }
+      root.append(menu);
+      placeMenu(anchor, 220, 470);
+    }
+
     function openMenu(note, anchor) {
       closeMenu();
       const swatches = el("div", { class: "sl-swatches", role: "group", "aria-label": "Colour" });
@@ -777,26 +1108,43 @@
             el("p", { text: view.archive ? "Agendas you tick as All resolved rest here, ready to restore." : "Start an Agenda for checklists, or a Doc for writing." })));
         } else if (view.archive) {
           scroller.append(el("div", { class: "sl-section", text: "RESOLVED" }));
-          scroller.append(el("div", { class: "sl-grid" }, ...list.map(card)));
+          scroller.append(group(list));
+        } else if (!data.settings.pinnedTop) {
+          scroller.append(group(list));
         } else {
           const pinned = list.filter((n) => n.pinned);
           const others = list.filter((n) => !n.pinned);
           if (pinned.length) {
             scroller.append(el("div", { class: "sl-section", text: "PINNED" }));
-            scroller.append(el("div", { class: "sl-grid" }, ...pinned.map(card)));
+            scroller.append(group(pinned));
             if (others.length) scroller.append(el("div", { class: "sl-section", text: "OTHERS" }));
           }
-          if (others.length) scroller.append(el("div", { class: "sl-grid" }, ...others.map(card)));
+          if (others.length) scroller.append(group(others));
         }
       }
       scroller.scrollTop = scroll;
+
+      root.classList.remove("ts-s", "ts-m", "ts-l", "ts-xl");
+      root.classList.add("ts-" + (data.settings.textSize || "m"));
+
+      // A zoomed-in agenda floats above everything.
+      const zoomed = view.focus && data.notes.find((n) => n.id === view.focus && n.type === "agenda" && !n.resolved);
+      if (zoomed) {
+        root.append(el("div", {
+          class: "sl-focus",
+          onmousedown: (e) => { if (e.target === e.currentTarget) { view.focus = null; render(); } },
+        }, agendaCard(zoomed, true)));
+        if (!focus) focus = { id: zoomed.id, sel: ".sl-add-item" };
+      } else {
+        view.focus = null;
+      }
 
       if (focus) {
         let target = null;
         if (focus.label) {
           target = root.querySelector('.sl-label-input[data-label="' + focus.label + '"]');
         } else {
-          const c = root.querySelector('[data-id="' + focus.id + '"]');
+          const c = root.querySelector('.sl-card.big[data-id="' + focus.id + '"]') || root.querySelector('.sl-card[data-id="' + focus.id + '"]') || root.querySelector('[data-id="' + focus.id + '"]');
           if (c && focus.item) target = c.querySelector('[data-item="' + focus.item + '"] .sl-item-text');
           else if (c && focus.sel) target = c.querySelector(focus.sel);
         }
@@ -844,7 +1192,9 @@
       }
     }
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeMenu();
+      if (e.key !== "Escape") return;
+      if (menu) closeMenu();
+      else if (view.focus) { view.focus = null; render(); }
     });
 
     load().then(() => render());
