@@ -80,6 +80,12 @@
     grammar: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13 15l3 3 5-6"/>',
     keys: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
     chevron: '<path d="M6 9l6 6 6-6"/>',
+    image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8.5 8.5"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    draw: '<path d="M3 21l1-4L16 5a2.4 2.4 0 0 1 3.5 3.5L7.5 20z"/><path d="M14 7l3 3"/>',
+    eraser: '<path d="M8 20h12M5.5 16.5l9-9a2 2 0 0 1 3 0l3 3a2 2 0 0 1 0 3L14 20H8z"/><path d="M11 11l5.5 5.5"/>',
+    shapes: '<circle cx="8" cy="8" r="4.5"/><rect x="11" y="11" width="9" height="9" rx="1.5"/>',
+    cursor: '<path d="M5 3l14 8-6 1.5L10 19z"/>',
     omega: '<path d="M5 20h4v-2a7 7 0 1 1 6 0v2h4"/>',
     sup: '<path d="M4 8l8 10M12 8l-8 10"/><path d="M15 4.5a2 2 0 1 1 3.5 1.5L15 10h4.5"/>',
     sub: '<path d="M4 6l8 10M12 6L4 16"/><path d="M15 14.5a2 2 0 1 1 3.5 1.5L15 20h4.5"/>',
@@ -121,8 +127,9 @@
   const ALLOWED = {
     P: ["style"], DIV: ["style"], BR: [], H1: ["style"], H2: ["style"], H3: ["style"], B: [], STRONG: [], I: [], EM: [], U: [],
     S: [], STRIKE: [], SUP: [], SUB: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: ["class"], CODE: [], PRE: [], SPAN: ["style"],
-    FONT: ["color"], A: ["href"],
+    FONT: ["color"], A: ["href"], IMG: ["src", "alt", "style"],
   };
+  const SAFE_IMG = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i;
   const SAFE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]+)$/i;
   // Only text colour, highlight and alignment survive inside style="".
   function safeStyle(value) {
@@ -134,6 +141,7 @@
       const val = part.slice(i + 1).trim();
       if ((prop === "color" || prop === "background-color") && SAFE_COLOR.test(val)) keep.push(prop + ": " + val);
       else if (prop === "text-align" && /^(left|center|right|justify)$/i.test(val)) keep.push(prop + ": " + val.toLowerCase());
+      else if (prop === "width" && /^(100|[1-9]\d?)(\.\d+)?%$/.test(val)) keep.push("width: " + val);
       else if (prop === "font-weight" && /^(bold|bolder|[6-9]00)$/i.test(val)) keep.push("font-weight: bold");
       else if (prop === "font-style" && /^italic$/i.test(val)) keep.push("font-style: italic");
       else if ((prop === "text-decoration" || prop === "text-decoration-line") && /(underline|line-through)/i.test(val)) {
@@ -142,7 +150,7 @@
     }
     return keep.join("; ");
   }
-  const DROP = ["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "TEMPLATE", "SVG", "MATH", "FORM", "INPUT", "BUTTON", "TEXTAREA", "SELECT", "IMG", "VIDEO", "AUDIO"];
+  const DROP = ["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "TEMPLATE", "SVG", "MATH", "FORM", "INPUT", "BUTTON", "TEXTAREA", "SELECT", "VIDEO", "AUDIO"];
   function cleanNode(node) {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === 1) {
@@ -158,6 +166,7 @@
             if (keep && attr.name === "href") keep = /^(https?:|mailto:)/i.test(attr.value.trim());
             if (keep && attr.name === "color") keep = SAFE_COLOR.test(attr.value.trim());
             if (keep && attr.name === "class") keep = attr.value.trim() === "sl-pb"; // page break only
+            if (keep && attr.name === "src") keep = SAFE_IMG.test(attr.value.trim()); // pictures stored inside the note only
             if (keep && attr.name === "style") {
               const clean = safeStyle(attr.value);
               if (clean) child.setAttribute("style", clean);
@@ -165,6 +174,7 @@
             }
             if (!keep) child.removeAttribute(attr.name);
           }
+          if (tag === "IMG" && !child.getAttribute("src")) { child.remove(); continue; }
           cleanNode(child);
         }
       } else if (child.nodeType !== 3) {
@@ -208,8 +218,8 @@
     }, text, svg(ICON.chevron, 14));
     const wrap = el("div", { class: "sl-dd" + (o.cls ? " " + o.cls : "") }, btn);
     function show() {
-      const opt = o.options.find((x) => x.value === value) || o.options[0];
-      text.textContent = opt ? opt.text : "";
+      const opt = o.options.find((x) => x.value === value);
+      text.textContent = opt ? opt.text : o.format ? o.format(value) : (o.options[0] || {}).text || "";
     }
     function open() {
       pop = el("div", { class: "sl-dd-pop", role: "listbox", "aria-label": o.label });
@@ -518,6 +528,81 @@
 
   const HAS_HIGHLIGHT = !!(window.CSS && CSS.highlights && window.Highlight);
 
+
+  // ---------- version history ----------
+  const VERSION_KEEP = 40;
+  const VERSION_BYTES = 500000;
+  let deviceName = "This computer";
+  if (hasApp) tauri.core.invoke("device_name").then((n) => { if (n) deviceName = n; }).catch(() => {});
+  function versionsOf(note) {
+    if (!Array.isArray(note.versions)) note.versions = [];
+    return note.versions;
+  }
+  function sameContent(a, b) {
+    return (a.title || "") === (b.title || "") && (a.html || "") === (b.html || "") && JSON.stringify(a.ink || []) === JSON.stringify(b.ink || []);
+  }
+  // Keeps a copy of the doc as it is now, so it can be brought back later.
+  function pushVersion(note, snap, force) {
+    const list = versionsOf(note);
+    const last = list[list.length - 1];
+    if (last && sameContent(last, snap)) return false;
+    if (!force && last && snap.t - last.t < 90000) {
+      const grew = Math.abs((snap.html || "").length - (last.html || "").length);
+      if (grew < 400) return false;
+    }
+    list.push(snap);
+    while (list.length > VERSION_KEEP) list.shift();
+    let bytes = list.reduce((n, v) => n + (v.html || "").length + JSON.stringify(v.ink || []).length, 0);
+    while (list.length > 3 && bytes > VERSION_BYTES) {
+      const gone = list.shift();
+      bytes -= (gone.html || "").length + JSON.stringify(gone.ink || []).length;
+    }
+    return true;
+  }
+  const snapOf = (note) => ({ t: now(), device: deviceName, title: note.title || "", html: note.html || "", ink: note.ink || [] });
+  function whenText(t) {
+    const d = new Date(t);
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (sameDay) return "Today, " + time;
+    const yest = new Date(today.getTime() - 86400000);
+    if (d.toDateString() === yest.toDateString()) return "Yesterday, " + time;
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + ", " + time;
+  }
+  // Word-by-word comparison, so changes can be shown like Google Docs.
+  function wordDiff(oldText, newText) {
+    const a = oldText.split(/(\s+)/).filter((x) => x !== "");
+    const b = newText.split(/(\s+)/).filter((x) => x !== "");
+    if (a.length > 1400 || b.length > 1400) return null;
+    const n = a.length;
+    const m = b.length;
+    const table = new Uint16Array((n + 1) * (m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        table[i * (m + 1) + j] = a[i] === b[j]
+          ? table[(i + 1) * (m + 1) + j + 1] + 1
+          : Math.max(table[(i + 1) * (m + 1) + j], table[i * (m + 1) + j + 1]);
+      }
+    }
+    const out = [];
+    const push = (type, text) => {
+      const last = out[out.length - 1];
+      if (last && last.type === type) last.text += text;
+      else out.push({ type, text });
+    };
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { push("same", a[i]); i++; j++; }
+      else if (table[(i + 1) * (m + 1) + j] >= table[i * (m + 1) + j + 1]) { push("del", a[i]); i++; }
+      else { push("add", b[j]); j++; }
+    }
+    while (i < n) { push("del", a[i]); i++; }
+    while (j < m) { push("add", b[j]); j++; }
+    return out;
+  }
+
   // ---------- storage ----------
   const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m", docLayout: "pages", grammar: true, autoSymbols: true, recentChars: [] };
   const TEXT_SIZES = { s: "Small", m: "Medium", l: "Large", xl: "Extra large" };
@@ -549,6 +634,8 @@
         delete n.body;
       }
       if (n.type === "agenda" && !Array.isArray(n.items)) n.items = [];
+      if (n.type === "doc" && !Array.isArray(n.ink)) n.ink = [];
+      if (n.versions && !Array.isArray(n.versions)) delete n.versions;
     }
     parsed.settings = Object.assign({}, DEFAULT_SETTINGS, parsed.settings || {});
     parsed.version = 2;
@@ -1078,6 +1165,8 @@
         const words = htmlToText(note.html).split(" ").filter(Boolean).length;
         let t = words + (words === 1 ? " word" : " words");
         if (layout() === "pages") t += " · " + pageCount + (pageCount === 1 ? " page" : " pages");
+        const strokes = (note.ink || []).length;
+        if (strokes) t += " · " + strokes + (strokes === 1 ? " stroke" : " strokes");
         status.textContent = t + " · " + (extra || "saved");
       }
 
@@ -1151,6 +1240,7 @@
         return b;
       }
       const sep = () => el("span", { class: "sl-tool-sep", "aria-hidden": "true" });
+      const zoomSlot = el("span", { class: "sl-zoom-slot" });
 
       const BLOCKS = [
         { value: "P", text: "Normal text", cls: "pv-p", hint: "Ctrl+Alt+0" },
@@ -1259,7 +1349,8 @@
         ["Superscript / subscript", "Ctrl+. / Ctrl+,"], ["Clear formatting", "Ctrl+\\"], ["Normal text", "Ctrl+Alt+0"], ["Title / Heading / Subheading", "Ctrl+Alt+1 / 2 / 3"],
         ["Numbered list", "Ctrl+Shift+7"], ["Bulleted list", "Ctrl+Shift+8"], ["Indent / outdent list", "Tab / Shift+Tab"],
         ["Align left / centre / right", "Ctrl+Shift+L / E / R"], ["Justify", "Ctrl+Shift+J"], ["Insert link", "Ctrl+K"],
-        ["Page break", "Ctrl+Enter"], ["Find", "Ctrl+F"], ["Find and replace", "Ctrl+H"], ["Undo / redo", "Ctrl+Z / Ctrl+Y"],
+        ["Zoom in / out / 100%", "Ctrl+= / Ctrl+- / Ctrl+0"], ["Zoom with touchpad", "Pinch, or Ctrl + scroll"],
+        ["Insert picture", "Paste or drop it in"], ["Draw and handwrite", "Ctrl+D"], ["Page break", "Ctrl+Enter"], ["Find", "Ctrl+F"], ["Find and replace", "Ctrl+H"], ["Undo / redo", "Ctrl+Z / Ctrl+Y"],
         ["Print or save as PDF", "Ctrl+P"], ["This list", "Ctrl+/"],
         ["Greek and maths symbols", "\\alpha, \\pi, \\sqrt + space"], ["Arrows and signs", "->  =>  <=  >=  !=  +-"],
         ["Powers and chemistry", "x^2 then space, H_2O"],
@@ -1284,6 +1375,7 @@
       tools.append(
         tool(ICON.undo, "Undo", () => run("undo"), null, "Ctrl+Z"),
         tool(ICON.redo, "Redo", () => run("redo"), null, "Ctrl+Y"),
+        zoomSlot,
         sep(), blockDd.el, sep(),
         tool(ICON.bold, "Bold", () => run("bold"), "bold", "Ctrl+B"),
         tool(ICON.italic, "Italic", () => run("italic"), "italic", "Ctrl+I"),
@@ -1390,12 +1482,17 @@
         const inText = body.contains(e.target);
         let act = null;
         if (e.key === "Escape" && !menu) {
-          if (gpop) act = closePop;
+          if (drawing) act = () => toggleDraw(false);
+          else if (histPick) act = closePreview;
+          else if (gpop) act = closePop;
           else if (!findBar.hidden) act = closeFind;
         }
         // Anywhere on the doc page
         if (c && !e.shiftKey && !e.altKey) {
           if (k === "p") act = printDoc;
+          else if (k === "=" || k === "+") act = () => stepZoom(1);
+          else if (k === "-") act = () => stepZoom(-1);
+          else if (k === "0") act = () => { zoomMode = 1; data.settings.docZoom = 1; save(); setZoom(1); };
           else if (k === "f") act = () => openFind(false);
           else if (k === "h") act = () => openFind(true);
           else if (k === "/") act = () => showShortcuts();
@@ -1408,6 +1505,7 @@
             else if (k === "u") act = () => run("underline");
             else if (k === "k") act = () => linkMenu(linkBtn);
             else if (k === "\\") act = () => run("removeFormat");
+            else if (k === "d") act = () => toggleDraw();
             else if (k === ".") act = () => run("superscript");
             else if (k === ",") act = () => run("subscript");
             else if (k === "enter") act = insertPageBreak;
@@ -1608,12 +1706,17 @@
       function openSide(which) {
         grammarOpen = which === "grammar";
         charsOpen = which === "chars";
+        histOpen = which === "hist";
         grammarPanel.hidden = !grammarOpen;
         charPanel.hidden = !charsOpen;
+        histPanel.hidden = !histOpen;
         grammarBtn.classList.toggle("on", grammarOpen);
         charsBtn.classList.toggle("on", charsOpen);
+        histBtn.classList.toggle("on", histOpen);
         check();
         if (charsOpen) drawChars();
+        if (histOpen) drawHistory();
+        else if (histPick) closePreview();
       }
       function check() {
         issues = [];
@@ -1891,6 +1994,686 @@
         replacing = false;
       }
 
+      // ----- handwriting: a drawing layer over the page -----
+      const REF = 816; // strokes are stored against this page width, so they scale with the page
+      if (!Array.isArray(note.ink)) note.ink = [];
+      const canvas = el("canvas", { class: "sl-ink", "aria-hidden": "true" });
+      const ctx = canvas.getContext("2d");
+      let scale = 1;
+      let drawing = false;      // draw mode on or off
+      let stroke = null;        // the stroke being drawn
+      const undoInk = [];
+      const redoInk = [];
+      const PEN_COLORS = [["Ink", "#2f2e2b"], ["Brick", "#8a4f45"], ["Moss", "#4d6b55"], ["Slate", "#4f6a80"], ["Plum", "#6d5a80"], ["Clay", "#a3684d"]];
+      const HL_COLORS = [["Butter", "#ece8b0"], ["Sage", "#d3dccb"], ["Rose", "#ecd6d1"], ["Mist", "#d2dbe2"], ["Lavender", "#ddd7f0"], ["Clay", "#e4cdb4"]];
+      const pen = { tool: "pen", color: "#2f2e2b", w: 2.2 };
+      const hl = { tool: "hl", color: "#ece8b0", w: 14 };
+      let inkTool = "pen";                    // pen | hl | eraser
+      let eraseMode = note.eraseMode || "stroke"; // stroke | part
+      let lastDrawTool = "pen";
+      let backToPen = data.settings.eraserBackToPen !== false;
+      let fingerDraw = data.settings.fingerDraw !== false;
+      let shapeSnap = data.settings.shapeSnap !== false;
+      const curPen = () => (inkTool === "hl" ? hl : pen);
+
+      function inkChanged(remember) {
+        if (remember) { undoInk.push(JSON.stringify(note.ink)); redoInk.length = 0; if (undoInk.length > 60) undoInk.shift(); }
+        note.ink = note.ink.filter((s) => s.pts.length >= 2);
+        touch(note);
+        updateStatus();
+        drawInk();
+      }
+      function stepInk(from, to) {
+        if (!from.length) return;
+        to.push(JSON.stringify(note.ink));
+        note.ink = JSON.parse(from.pop());
+        touch(note);
+        drawInk();
+        if (histOpen) drawHistory();
+      }
+
+      let inkH = 0;
+      function sizeCanvas() {
+        const k = zoomK();
+        const h = paper.getBoundingClientRect().height / k;
+        if (!h) return;
+        scale = 1;
+        inkH = h;
+        // Sharp at any zoom, but never larger than the browser allows for one canvas.
+        const res = Math.max(0.5, Math.min(4, (window.devicePixelRatio || 1) * k, 16000 / h, Math.sqrt(40e6 / (REF * h))));
+        const cw = Math.round(REF * res);
+        const ch = Math.round(h * res);
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        canvas.style.width = REF + "px";
+        canvas.style.height = h + "px";
+        ctx.setTransform(res, 0, 0, res, 0, 0);
+      }
+      function strokePath(s) {
+        const p = s.pts;
+        ctx.strokeStyle = s.color;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.globalAlpha = s.tool === "hl" ? 0.42 : 1;
+        if (p.length === 3) {
+          ctx.beginPath();
+          ctx.lineWidth = s.w * (s.tool === "hl" ? 1 : 0.4 + 0.6 * p[2]);
+          ctx.arc(p[0], p[1], ctx.lineWidth / 2, 0, 6.2832);
+          ctx.fillStyle = s.color;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          return;
+        }
+        // Highlighter and even-pressure strokes are one smooth path, so see-through ink stays even.
+        let even = s.tool === "hl";
+        if (!even) {
+          even = true;
+          for (let i = 5; i < p.length; i += 3) if (Math.abs(p[i] - p[2]) > 0.05) { even = false; break; }
+        }
+        if (even) {
+          ctx.beginPath();
+          ctx.lineWidth = s.w * (s.tool === "hl" ? 1 : 0.4 + 0.6 * p[2]);
+          ctx.moveTo(p[0], p[1]);
+          for (let i = 3; i < p.length; i += 3) {
+            if (i + 3 < p.length) ctx.quadraticCurveTo(p[i], p[i + 1], (p[i] + p[i + 3]) / 2, (p[i + 1] + p[i + 4]) / 2);
+            else ctx.lineTo(p[i], p[i + 1]);
+          }
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          return;
+        }
+        for (let i = 3; i < p.length; i += 3) {
+          ctx.beginPath();
+          ctx.lineWidth = s.w * (0.4 + 0.6 * ((p[i + 2] + p[i - 1]) / 2));
+          ctx.moveTo(p[i - 3], p[i - 2]);
+          if (i + 3 < p.length) {
+            const mx = (p[i] + p[i + 3]) / 2;
+            const my = (p[i + 1] + p[i + 4]) / 2;
+            ctx.quadraticCurveTo(p[i], p[i + 1], mx, my);
+          } else {
+            ctx.lineTo(p[i], p[i + 1]);
+          }
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      function drawInk() {
+        sizeCanvas();
+        ctx.clearRect(0, 0, REF, inkH);
+        for (const s of note.ink) strokePath(s);
+        if (stroke) strokePath(stroke);
+      }
+
+      // --- geometry helpers for erasing and shapes ---
+      function near(s, x, y, r) {
+        const p = s.pts;
+        const pad = r + s.w / 2;
+        for (let i = 0; i < p.length - 3; i += 3) {
+          const dx = p[i + 3] - p[i];
+          const dy = p[i + 4] - p[i + 1];
+          const len = dx * dx + dy * dy;
+          let t = len ? ((x - p[i]) * dx + (y - p[i + 1]) * dy) / len : 0;
+          t = Math.max(0, Math.min(1, t));
+          const ex = p[i] + t * dx - x;
+          const ey = p[i + 1] + t * dy - y;
+          if (ex * ex + ey * ey <= pad * pad) return true;
+        }
+        const last = p.length - 3;
+        return (p[last] - x) ** 2 + (p[last + 1] - y) ** 2 <= pad * pad;
+      }
+      function eraseAt(x, y, r) {
+        let changed = false;
+        const kept = [];
+        for (const s of note.ink) {
+          if (!near(s, x, y, r)) { kept.push(s); continue; }
+          changed = true;
+          if (eraseMode === "stroke") continue;
+          // Partial rubbing out: keep the pieces of the stroke that were not touched.
+          let piece = [];
+          for (let i = 0; i < s.pts.length; i += 3) {
+            const hit = (s.pts[i] - x) ** 2 + (s.pts[i + 1] - y) ** 2 <= (r + s.w / 2) ** 2;
+            if (hit) {
+              if (piece.length >= 6) kept.push({ tool: s.tool, color: s.color, w: s.w, pts: piece });
+              piece = [];
+            } else {
+              piece.push(s.pts[i], s.pts[i + 1], s.pts[i + 2]);
+            }
+          }
+          if (piece.length >= 6) kept.push({ tool: s.tool, color: s.color, w: s.w, pts: piece });
+        }
+        if (changed) note.ink = kept;
+        return changed;
+      }
+      // Hold still at the end of a stroke and it becomes a neat line, box, circle or triangle.
+      function snapShape(s) {
+        const p = s.pts;
+        if (p.length < 18) return null;
+        const xs = [];
+        const ys = [];
+        for (let i = 0; i < p.length; i += 3) { xs.push(p[i]); ys.push(p[i + 1]); }
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const w = maxX - minX;
+        const h = maxY - minY;
+        if (Math.max(w, h) < 18) return null;
+        let len = 0;
+        for (let i = 1; i < xs.length; i++) len += Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+        const span = Math.hypot(xs[xs.length - 1] - xs[0], ys[ys.length - 1] - ys[0]);
+        const closed = span < Math.max(w, h) * 0.32;
+        const mk = (pts) => ({ tool: s.tool, color: s.color, w: s.w, pts: pts.flatMap(([x, y]) => [x, y, 0.8]) });
+        if (!closed) {
+          if (len && span / len > 0.88) return mk([[xs[0], ys[0]], [xs[xs.length - 1], ys[ys.length - 1]]]);
+          return null;
+        }
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const area = Math.abs(xs.reduce((a, _, i) => {
+          const j = (i + 1) % xs.length;
+          return a + (xs[i] * ys[j] - xs[j] * ys[i]);
+        }, 0) / 2);
+        const fill = area / (w * h || 1);
+        if (fill > 0.88) {
+          return mk([[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY], [minX, minY]]);
+        }
+        if (fill < 0.58) {
+          // Three corners: the points furthest from the middle, spread around it.
+          const picked = [];
+          for (let a = -90; a < 270; a += 120) {
+            let best = null;
+            let bestD = -1;
+            for (let i = 0; i < xs.length; i++) {
+              const ang = (Math.atan2(ys[i] - cy, xs[i] - cx) * 180) / Math.PI;
+              let d = Math.abs(((ang - a + 540) % 360) - 180);
+              if (d > 120) continue;
+              const dist = Math.hypot(xs[i] - cx, ys[i] - cy);
+              if (dist > bestD) { bestD = dist; best = [xs[i], ys[i]]; }
+            }
+            if (best) picked.push(best);
+          }
+          if (picked.length === 3) return mk(picked.concat([picked[0]]));
+        }
+        const pts = [];
+        for (let a = 0; a <= 360; a += 10) {
+          const r = (a * Math.PI) / 180;
+          pts.push([cx + (w / 2) * Math.cos(r), cy + (h / 2) * Math.sin(r)]);
+        }
+        return mk(pts);
+      }
+
+      // --- pointer handling ---
+      let held = null;
+      function point(e) {
+        const r = canvas.getBoundingClientRect();
+        const k = zoomK();
+        return {
+          x: (e.clientX - r.left) / k,
+          y: (e.clientY - r.top) / k,
+          p: e.pressure && e.pressure > 0 && e.pointerType !== "mouse" ? e.pressure : 0.5,
+        };
+      }
+      canvas.addEventListener("pointerdown", (e) => {
+        if (!drawing || e.button !== 0) return;
+        if (e.pointerType === "touch" && !fingerDraw) return;
+        canvas.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        undoInk.push(JSON.stringify(note.ink));
+        redoInk.length = 0;
+        if (undoInk.length > 60) undoInk.shift();
+        const q = point(e);
+        if (inkTool === "eraser") {
+          stroke = null;
+          eraseAt(q.x, q.y, eraseMode === "stroke" ? 6 : 10);
+          drawInk();
+          return;
+        }
+        const c = curPen();
+        stroke = { tool: c.tool, color: c.color, w: c.w, pts: [q.x, q.y, q.p] };
+        held = { x: q.x, y: q.y, t: Date.now() };
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drawing || !e.buttons) return;
+        if (e.pointerType === "touch" && !fingerDraw) return;
+        const q = point(e);
+        if (inkTool === "eraser") {
+          if (eraseAt(q.x, q.y, eraseMode === "stroke" ? 6 : 10)) drawInk();
+          return;
+        }
+        if (!stroke) return;
+        const n = stroke.pts.length;
+        if (Math.hypot(q.x - stroke.pts[n - 3], q.y - stroke.pts[n - 2]) < 1.1) return;
+        stroke.pts.push(q.x, q.y, q.p);
+        if (held && Math.hypot(q.x - held.x, q.y - held.y) > 4) held = { x: q.x, y: q.y, t: Date.now() };
+        drawInk();
+      });
+      function endStroke(e) {
+        if (!drawing) return;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (inkTool === "eraser") {
+          inkChanged(false);
+          if (backToPen) setTool(lastDrawTool);
+          return;
+        }
+        if (!stroke) return;
+        let s = stroke;
+        stroke = null;
+        if (shapeSnap && held && Date.now() - held.t > 450) s = snapShape(s) || s;
+        note.ink.push(s);
+        inkChanged(false);
+      }
+      canvas.addEventListener("pointerup", endStroke);
+      canvas.addEventListener("pointercancel", endStroke);
+
+      // --- the pen tray ---
+      const tray = el("div", { class: "sl-tray", hidden: true, role: "toolbar", "aria-label": "Drawing tools" });
+      const widthInput = el("input", {
+        type: "range", min: "1", max: "40", step: "0.5", class: "sl-range", "aria-label": "Stroke width",
+        oninput: (e) => setWidth(parseFloat(e.target.value)),
+      });
+      const widthNum = el("input", {
+        type: "number", min: "1", max: "40", step: "0.5", class: "sl-wnum", "aria-label": "Stroke width in points",
+        onchange: (e) => setWidth(parseFloat(e.target.value)),
+      });
+      function setWidth(v) {
+        if (!(v > 0)) return;
+        curPen().w = Math.min(40, Math.max(1, v));
+        drawTray();
+      }
+      function setTool(t) {
+        inkTool = t;
+        if (t !== "eraser") lastDrawTool = t;
+        drawTray();
+      }
+      function trayBtn(icon, label, on, onClick, extra) {
+        return el("button", { class: "sl-tool" + (on ? " on" : "") + (extra || ""), "aria-label": label, title: label, "aria-pressed": on ? "true" : "false", onclick: onClick }, svg(icon, 16));
+      }
+      function drawTray() {
+        tray.textContent = "";
+        tray.hidden = !drawing;
+        drawBtn.classList.toggle("on", drawing);
+        canvas.classList.toggle("on", drawing);
+        canvas.style.cursor = inkTool === "eraser" ? "cell" : "crosshair";
+        body.setAttribute("contenteditable", drawing ? "false" : "true");
+        paper.classList.toggle("drawing", drawing);
+        if (!drawing) return;
+        tray.append(
+          trayBtn(ICON.draw, "Pen", inkTool === "pen", () => setTool("pen")),
+          trayBtn(ICON.mark, "Highlighter", inkTool === "hl", () => setTool("hl")),
+          trayBtn(ICON.eraser, "Eraser", inkTool === "eraser", () => setTool("eraser")),
+          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }));
+        if (inkTool === "eraser") {
+          for (const [k, name] of [["stroke", "Whole stroke"], ["part", "Rub out part"]]) {
+            tray.append(el("button", {
+              class: "sl-pill" + (eraseMode === k ? " dark" : ""),
+              onclick: () => { eraseMode = k; note.eraseMode = k; touch(note); drawTray(); },
+              text: name,
+            }));
+          }
+          tray.append(el("label", { class: "sl-tray-opt" },
+            el("input", { type: "checkbox", checked: backToPen, onchange: (e) => { backToPen = e.target.checked; data.settings.eraserBackToPen = backToPen; save(); } }),
+            "Back to pen after erasing"));
+        } else {
+          const c = curPen();
+          const colors = inkTool === "hl" ? HL_COLORS : PEN_COLORS;
+          const dots = el("div", { class: "sl-pen-colors" });
+          for (const [name, value] of colors) {
+            dots.append(el("button", {
+              class: "sl-pen-dot" + (c.color === value ? " on" : ""),
+              style: "background:" + value,
+              "aria-label": name, title: name,
+              onclick: () => { c.color = value; drawTray(); },
+            }));
+          }
+          widthInput.value = c.w;
+          widthNum.value = c.w;
+          tray.append(dots, el("span", { class: "sl-tool-sep", "aria-hidden": "true" }), widthInput, widthNum, el("span", { class: "sl-tray-unit", text: "pt" }));
+        }
+        tray.append(
+          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
+          trayBtn(ICON.undo, "Undo stroke", false, () => stepInk(undoInk, redoInk)),
+          trayBtn(ICON.redo, "Redo stroke", false, () => stepInk(redoInk, undoInk)),
+          trayBtn(ICON.shapes, "Hold at the end of a stroke to make a neat shape", shapeSnap, () => { shapeSnap = !shapeSnap; data.settings.shapeSnap = shapeSnap; save(); drawTray(); }),
+          el("label", { class: "sl-tray-opt" },
+            el("input", { type: "checkbox", checked: fingerDraw, onchange: (e) => { fingerDraw = e.target.checked; data.settings.fingerDraw = fingerDraw; save(); } }),
+            "Draw with finger"),
+          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
+          el("button", { class: "sl-pill", onclick: () => toggleDraw(false), text: "Done" }));
+      }
+      function toggleDraw(force) {
+        drawing = force === undefined ? !drawing : force;
+        drawTray();
+        if (!drawing) body.focus();
+      }
+      const drawBtn = tool(ICON.draw, "Draw and handwrite", () => toggleDraw(), null, "Ctrl+D");
+
+      // Slot the drawing and history buttons in beside Print.
+      const printAnchor = tools.querySelector('[aria-label="Print or save as PDF"]');
+      tools.insertBefore(drawBtn, printAnchor);
+
+      // ----- version history -----
+      let histOpen = false;
+      let histPick = null;
+      const histList = el("div", { class: "sl-g-list" });
+      const histPanel = el("aside", { class: "sl-grammar sl-hist", hidden: true, "aria-label": "Version history" },
+        el("div", { class: "sl-g-head" },
+          el("span", { class: "sl-choice-head", text: "VERSION HISTORY" }),
+          el("button", { class: "sl-tool", "aria-label": "Close history", onclick: () => toggleHist(false) }, svg(ICON.x, 14))),
+        histList,
+        el("p", { class: "sl-g-note", text: "A copy is kept as you write, and whenever you close the doc. Older copies are removed once there are 40." }));
+      const histBtn = tool(ICON.clock, "Version history", () => toggleHist(), null);
+      tools.insertBefore(histBtn, printAnchor);
+      function toggleHist(force) {
+        const on = force === undefined ? !histOpen : force;
+        openSide(on ? "hist" : null);
+      }
+      function closePreview() {
+        histPick = null;
+        preview.hidden = true;
+        paper.hidden = false;
+        drawHistory();
+      }
+      const previewPaper = el("div", { class: "sl-paper sl-prev-paper" });
+      const previewHead = el("div", { class: "sl-prev-head" });
+      const preview = el("div", { class: "sl-prev", hidden: true }, previewHead, previewPaper);
+      function showVersion(v) {
+        histPick = v;
+        paper.hidden = true;
+        preview.hidden = false;
+        previewHead.textContent = "";
+        previewHead.append(
+          el("span", { class: "sl-prev-when", text: whenText(v.t) + " · " + (v.device || "This computer") }),
+          el("button", { class: "sl-pill dark", onclick: () => restoreVersion(v), text: "Restore this version" }),
+          el("button", { class: "sl-pill", onclick: closePreview, text: "Back to current" }));
+        previewPaper.textContent = "";
+        previewPaper.append(el("div", { class: "sl-doc-title sl-prev-title", text: v.title || "Untitled doc" }));
+        const diff = wordDiff(htmlToText(v.html), htmlToText(note.html));
+        const bodyBox = el("div", { class: "sl-doc-body sl-prev-body" });
+        if (diff && diff.some((d) => d.type !== "same")) {
+          for (const d of diff) {
+            if (d.type === "same") bodyBox.append(d.text);
+            else if (d.type === "del") bodyBox.append(el("span", { class: "sl-d-del", text: d.text }));
+            else bodyBox.append(el("span", { class: "sl-d-add", text: d.text }));
+          }
+          previewHead.append(el("span", { class: "sl-prev-key" },
+            el("span", { class: "sl-d-del", text: "removed since" }), " ", el("span", { class: "sl-d-add", text: "added since" })));
+        } else {
+          bodyBox.innerHTML = cleanHtml(v.html);
+        }
+        previewPaper.append(bodyBox);
+        if ((v.ink || []).length) previewPaper.append(el("p", { class: "sl-g-note", text: (v.ink || []).length + " handwritten strokes are part of this version." }));
+        drawHistory();
+      }
+      function restoreVersion(v) {
+        pushVersion(note, snapOf(note), true);
+        note.title = v.title || "";
+        note.html = v.html || "";
+        note.ink = JSON.parse(JSON.stringify(v.ink || []));
+        touch(note);
+        render();
+        showToast("Restored the version from " + whenText(v.t) + ".", () => {
+          const list = versionsOf(note);
+          const back = list[list.length - 1];
+          if (!back) return;
+          note.title = back.title;
+          note.html = back.html;
+          note.ink = back.ink;
+          list.pop();
+          touch(note);
+          render();
+        });
+      }
+      function drawHistory() {
+        histList.textContent = "";
+        const list = versionsOf(note).slice().reverse();
+        histList.append(el("button", {
+          class: "sl-ver" + (histPick ? "" : " on"),
+          onclick: closePreview,
+        },
+          el("span", { class: "sl-ver-when", text: "Current version" }),
+          el("span", { class: "sl-ver-who", text: htmlToText(note.html).split(" ").filter(Boolean).length + " words" + ((note.ink || []).length ? " · " + note.ink.length + " strokes" : "") })));
+        if (!list.length) {
+          histList.append(el("p", { class: "sl-g-note", text: "No earlier versions yet. One is kept as you write." }));
+          return;
+        }
+        for (const v of list) {
+          histList.append(el("button", {
+            class: "sl-ver" + (histPick === v ? " on" : ""),
+            onclick: () => showVersion(v),
+          },
+            el("span", { class: "sl-ver-when", text: whenText(v.t) }),
+            el("span", { class: "sl-ver-who", text: (v.device || "This computer") + " · " + htmlToText(v.html).split(" ").filter(Boolean).length + " words" })));
+        }
+      }
+      // Keep a copy once typing settles, and again when the doc is closed.
+      let snapTimer = 0;
+      function laterSnap() {
+        clearTimeout(snapTimer);
+        snapTimer = setTimeout(() => {
+          if (pushVersion(note, snapOf(note), false)) { save(); if (histOpen) drawHistory(); }
+        }, 15000);
+      }
+      cleanups.push(() => {
+        clearTimeout(snapTimer);
+        if (pushVersion(note, snapOf(note), false)) save();
+      });
+
+
+      // ----- zoom, like Google Docs: pinch the touchpad, Ctrl + / Ctrl − / Ctrl 0, or the menu -----
+      const ZOOMS = [0.5, 0.75, 0.9, 1, 1.25, 1.5, 2];
+      let zoom = 1;
+      let zoomMode = data.settings.docZoom === undefined ? "auto" : data.settings.docZoom; // auto | fit | a number
+      function zoomK() {
+        const wpx = paper.getBoundingClientRect().width;
+        return wpx ? wpx / REF : 1;
+      }
+      function fitZoom() {
+        const avail = (scroller.clientWidth || 900) - 40;
+        return Math.min(2, Math.max(0.5, avail / REF));
+      }
+      const pct = (z) => Math.round(z * 100) + "%";
+      const zoomDd = dropdown({
+        label: "Zoom",
+        cls: "sl-dd-zoom",
+        keepFocus: true,
+        onOpen: saveSel,
+        options: [{ value: "fit", text: "Fit width" }].concat(ZOOMS.map((z) => ({ value: z, text: pct(z) }))),
+        value: 1,
+        format: (v) => (typeof v === "number" ? pct(v) : "100%"),
+        onPick: (v) => {
+          zoomMode = v;
+          data.settings.docZoom = v;
+          save();
+          setZoom(v === "fit" ? fitZoom() : v);
+          restoreSel();
+        },
+      });
+      function setZoom(z, ax, ay) {
+        z = Math.round(Math.min(2.5, Math.max(0.5, z)) * 1000) / 1000;
+        const sr = scroller.getBoundingClientRect();
+        const ox = (ax === undefined ? sr.left + sr.width / 2 : ax) - sr.left;
+        const oy = (ay === undefined ? sr.top + sr.height / 3 : ay) - sr.top;
+        // Keep the spot under the cursor (or the middle) in place while zooming.
+        const cx = (scroller.scrollLeft + ox) / zoom;
+        const cy = (scroller.scrollTop + oy) / zoom;
+        zoom = z;
+        zoomBox.style.zoom = String(z);
+        scroller.scrollLeft = cx * z - ox;
+        scroller.scrollTop = cy * z - oy;
+        zoomDd.set(zoomMode === "fit" ? "fit" : z);
+        closePop();
+        later();
+      }
+      function stepZoom(dir) {
+        const next = dir > 0 ? ZOOMS.find((z) => z > zoom + 0.001) : ZOOMS.slice().reverse().find((z) => z < zoom - 0.001);
+        if (!next) return;
+        zoomMode = next;
+        data.settings.docZoom = next;
+        save();
+        setZoom(next);
+      }
+      let zoomSave = 0;
+      function onWheelZoom(e) {
+        if (!e.ctrlKey && !e.metaKey) return; // touchpad pinch arrives as Ctrl + wheel
+        e.preventDefault();
+        const f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.004));
+        zoomMode = zoom * f;
+        setZoom(zoom * f, e.clientX, e.clientY);
+        zoomMode = zoom;
+        clearTimeout(zoomSave);
+        zoomSave = setTimeout(() => { data.settings.docZoom = zoom; save(); }, 400);
+      }
+      cleanups.push(() => clearTimeout(zoomSave));
+
+      // ----- pictures: paste, drop, or pick a file -----
+      const MAX_SIDE = 1600;
+      function readImage(file) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+              let w = img.naturalWidth;
+              let h = img.naturalHeight;
+              let url = reader.result;
+              // Big photos are scaled down so notes stay quick to open and save.
+              if (Math.max(w, h) > MAX_SIDE || file.size > 1200000) {
+                const r = Math.min(1, MAX_SIDE / Math.max(w, h));
+                w = Math.round(w * r);
+                h = Math.round(h * r);
+                const c = document.createElement("canvas");
+                c.width = w;
+                c.height = h;
+                const cx = c.getContext("2d");
+                const keepPng = /png|gif|webp/.test(file.type) && file.size < 1200000;
+                if (!keepPng) { cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, w, h); }
+                cx.drawImage(img, 0, 0, w, h);
+                url = keepPng ? c.toDataURL("image/png") : c.toDataURL("image/jpeg", 0.85);
+              }
+              resolve({ url, w });
+            };
+            img.onerror = () => resolve(null);
+            img.src = reader.result;
+          };
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+      }
+      async function insertImages(files) {
+        const list = Array.from(files || []).filter((f) => /^image\/(png|jpe?g|gif|webp)$/i.test(f.type));
+        if (!list.length) return false;
+        saveSel();
+        updateStatus("adding picture…");
+        let html = "";
+        for (const f of list) {
+          const res = await readImage(f);
+          if (!res || !SAFE_IMG.test(res.url)) continue;
+          const width = Math.max(10, Math.min(100, Math.round((res.w / 688) * 100)));
+          html += '<img src="' + res.url + '" alt="" style="width: ' + width + '%">';
+        }
+        if (!html) { updateStatus("that picture couldn't be read"); return true; }
+        // Pictures go on their own line, like Google Docs does when you paste into a sentence end.
+        restoreSel();
+        const sel = window.getSelection();
+        const n = sel.anchorNode;
+        const blk = n && (n.nodeType === 1 ? n : n.parentElement).closest("p, div, h1, h2, h3, li, blockquote");
+        if (blk && blk !== body && blk.textContent.trim()) {
+          try { document.execCommand("insertParagraph"); } catch (e) {}
+          saveSel();
+        }
+        run("insertHTML", html);
+        buildOutline();
+        return true;
+      }
+      const filePick = el("input", {
+        type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", multiple: true, hidden: true,
+        onchange: (e) => { insertImages(e.target.files); e.target.value = ""; },
+      });
+      const imageBtn = tool(ICON.image, "Insert picture (or paste / drop one)", () => { saveSel(); filePick.click(); }, null);
+      tools.insertBefore(imageBtn, charsBtn);
+      tools.append(filePick);
+
+      // Click a picture to resize, align or remove it.
+      let imgBar = null;
+      let imgOn = null;
+      function closeImgBar() {
+        if (imgBar) imgBar.remove();
+        imgBar = null;
+        if (imgOn) imgOn.classList.remove("sl-img-on");
+        imgOn = null;
+      }
+      cleanups.push(closeImgBar);
+      function imgWidth(img) {
+        const m = /width:\s*([\d.]+)%/.exec(img.getAttribute("style") || "");
+        return m ? parseFloat(m[1]) : 100;
+      }
+      function setImgWidth(img, w) {
+        img.style.width = Math.max(10, Math.min(100, Math.round(w))) + "%";
+        syncBody();
+        later();
+      }
+      function openImgBar(img) {
+        closeImgBar();
+        imgOn = img;
+        img.classList.add("sl-img-on");
+        const sel = window.getSelection();
+        const r = document.createRange();
+        r.selectNode(img);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        const block = img.closest("p, div, h1, h2, h3, li, blockquote");
+        const slider = el("input", {
+          type: "range", min: "10", max: "100", step: "1", value: String(imgWidth(img)), class: "sl-range", "aria-label": "Picture size",
+          oninput: (e) => { setImgWidth(img, parseFloat(e.target.value)); place(); },
+        });
+        const align = (a) => {
+          if (block && block !== body) { block.style.textAlign = a; syncBody(); later(); place(); }
+        };
+        imgBar = el("div", { class: "sl-imgbar", role: "toolbar", "aria-label": "Picture" },
+          ...[["Small", 33], ["Medium", 60], ["Full width", 100]].map(([name, w]) => el("button", {
+            class: "sl-pill", onmousedown: (e) => e.preventDefault(),
+            onclick: () => { setImgWidth(img, w); slider.value = String(w); place(); }, text: name,
+          })),
+          slider,
+          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
+          el("button", { class: "sl-tool", "aria-label": "Align picture left", onmousedown: (e) => e.preventDefault(), onclick: () => align("left") }, svg(ICON.left, 15)),
+          el("button", { class: "sl-tool", "aria-label": "Centre picture", onmousedown: (e) => e.preventDefault(), onclick: () => align("center") }, svg(ICON.center, 15)),
+          el("button", { class: "sl-tool", "aria-label": "Align picture right", onmousedown: (e) => e.preventDefault(), onclick: () => align("right") }, svg(ICON.right, 15)),
+          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
+          el("button", {
+            class: "sl-pill", onmousedown: (e) => e.preventDefault(),
+            onclick: () => { const i = img; closeImgBar(); i.remove(); syncBody(); later(); }, text: "Delete",
+          }));
+        root.append(imgBar);
+        function place() {
+          if (!imgBar) return;
+          const b = img.getBoundingClientRect();
+          const rr = root.getBoundingClientRect();
+          const wBar = imgBar.offsetWidth || 420;
+          imgBar.style.left = Math.max(8, Math.min(b.left - rr.left + b.width / 2 - wBar / 2, rr.width - wBar - 8)) + "px";
+          const below = b.bottom - rr.top + 8;
+          imgBar.style.top = (below + 50 > rr.height ? Math.max(8, b.top - rr.top - 52) : below) + "px";
+        }
+        place();
+      }
+      body.addEventListener("mousedown", (e) => {
+        const img = e.target.closest && e.target.closest("img");
+        if (img && body.contains(img)) { e.preventDefault(); body.focus(); openImgBar(img); }
+        else closeImgBar();
+      });
+      body.addEventListener("dragover", (e) => {
+        if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault();
+      });
+      body.addEventListener("drop", (e) => {
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || !files.length) return;
+        e.preventDefault();
+        const at = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+        if (at && body.contains(at.startContainer)) savedRange = at;
+        insertImages(files);
+      });
+      // Pictures take a moment to load; re-split pages once they have.
+      body.addEventListener("load", () => later(), true);
+
       // ----- pages: split the doc into separate sheets, like Google Docs -----
       const sheets = el("div", { class: "sl-sheets", "aria-hidden": "true" });
       const GAP = 24;
@@ -1920,10 +2703,12 @@
           paper.style.paddingTop = paper.style.paddingBottom = "";
           pageCount = 1;
           updateStatus();
+          drawInk();
           return;
         }
-        const w = paper.offsetWidth;
-        if (!w) return;
+        const zk = zoomK();
+        const w = REF;
+        if (!paper.getBoundingClientRect().width) return;
         const pageH = Math.round((w * 11) / 8.5);
         const margin = Math.round(w * (full ? 0.09 : 0.07));
         const stride = pageH + GAP;
@@ -1935,13 +2720,14 @@
           const r = u.getBoundingClientRect();
           if (!r.height && !forceNext) continue;
           const base = top0();
-          const t = r.top - base;
-          const b = r.bottom - base;
+          const t = (r.top - base) / zk;
+          const b = (r.bottom - base) / zk;
+          const rh = r.height / zk;
           const k = Math.floor(t / stride);
           const end = k * stride + pageH - margin;
           let target = null;
           if (forceNext) { if (t > k * stride + margin + 1) target = (k + 1) * stride + margin; }
-          else if (t >= end || (b > end && r.height < pageH - 2 * margin)) target = (k + 1) * stride + margin;
+          else if (t >= end || (b > end && rh < pageH - 2 * margin)) target = (k + 1) * stride + margin;
           forceNext = false;
           if (target === null) continue;
           u.setAttribute("data-slpush", "");
@@ -1949,16 +2735,18 @@
             // These have a background, so push with margin instead of padding.
             const prev = u.previousElementSibling;
             const cur = parseFloat(getComputedStyle(u).marginTop) || 0;
-            const gap = prev ? Math.max(cur, t - (prev.getBoundingClientRect().bottom - base)) : cur;
+            const gap = prev ? Math.max(cur, t - (prev.getBoundingClientRect().bottom - base) / zk) : cur;
             u.style.marginTop = gap + (target - t) + "px";
           } else {
             const cur = parseFloat(getComputedStyle(u).paddingTop) || 0;
             u.style.paddingTop = cur + (target - t) + "px";
           }
         }
-        const bottom = body.getBoundingClientRect().bottom - top0();
+        drawInk();
+        const bottom = (body.getBoundingClientRect().bottom - top0()) / zk;
         pageCount = Math.max(1, Math.floor(Math.max(0, bottom - 1) / stride) + 1);
         paper.style.minHeight = pageCount * stride - GAP + "px";
+        drawInk();
         sheets.textContent = "";
         for (let i = 0; i < pageCount; i++) {
           sheets.append(el("div", { class: "sl-sheet", style: "top:" + i * stride + "px; height:" + pageH + "px" },
@@ -1982,11 +2770,15 @@
         // New lines become proper paragraphs.
         try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
       });
-      body.addEventListener("input", (e) => { autoSymbol(e); syncBody(); buildOutline(); closePop(); later(); });
+      body.addEventListener("input", (e) => { closeImgBar(); autoSymbol(e); syncBody(); buildOutline(); closePop(); later(); laterSnap(); });
       body.addEventListener("blur", saveSel);
       body.addEventListener("paste", (e) => {
         // Keep simple formatting from the clipboard, drop everything else.
         e.preventDefault();
+        if (e.clipboardData.files && e.clipboardData.files.length) {
+          const hasImage = Array.from(e.clipboardData.files).some((f) => /^image\//.test(f.type));
+          if (hasImage) { insertImages(e.clipboardData.files); return; }
+        }
         const html = e.clipboardData.getData("text/html");
         try { document.execCommand("styleWithCSS", false, false); } catch (err) {}
         if (html) document.execCommand("insertHTML", false, cleanHtml(html));
@@ -2007,7 +2799,7 @@
         value: note.title,
         placeholder: "Untitled doc",
         "aria-label": "Doc title",
-        oninput: (e) => { note.title = e.target.value; touch(note); },
+        oninput: (e) => { note.title = e.target.value; touch(note); laterSnap(); },
         onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); body.focus(); } },
       });
 
@@ -2017,7 +2809,7 @@
       const due = dueInfo(note.due);
       if (due) meta.append(el("span", { class: "sl-chip " + due.cls, text: due.text }));
 
-      const paper = el("div", { class: "sl-paper" }, sheets, meta, title, body);
+      const paper = el("div", { class: "sl-paper" }, sheets, meta, title, body, canvas);
       // Clicking the empty part of a page puts the cursor at the end of the text.
       paper.addEventListener("mousedown", (e) => {
         if (e.target !== paper) return;
@@ -2030,10 +2822,12 @@
         sel.removeAllRanges();
         sel.addRange(r);
       });
-      const scroller = el("div", { class: "sl-doc-scroll" }, paper);
+      const zoomBox = el("div", { class: "sl-zoom" }, paper);
+      const scroller = el("div", { class: "sl-doc-scroll" }, zoomBox, preview);
+      zoomSlot.replaceWith(zoomDd.el);
       scroller.addEventListener("scroll", closePop);
-      const page = el("div", { class: "sl-docpage", onkeydown: shortcut }, head, tools, findBar,
-        el("div", { class: "sl-doc-main" }, outline, scroller, grammarPanel, charPanel));
+      const page = el("div", { class: "sl-docpage", onkeydown: shortcut, onwheel: undefined }, head, tools, findBar, tray,
+        el("div", { class: "sl-doc-main" }, outline, scroller, grammarPanel, charPanel, histPanel));
 
       // Re-split pages when the window is resized, and around printing.
       let lastW = 0;
@@ -2048,8 +2842,34 @@
       window.addEventListener("afterprint", after);
       cleanups.push(() => { ro.disconnect(); window.removeEventListener("beforeprint", before); window.removeEventListener("afterprint", after); });
 
+      page.addEventListener("wheel", onWheelZoom, { passive: false });
+      // While drawing nothing has keyboard focus, so listen on the whole window too.
+      const winKeys = (e) => {
+        const a = document.activeElement;
+        if (!page.isConnected || (a && a !== document.body && a !== document.documentElement)) return;
+        shortcut(e);
+      };
+      document.addEventListener("keydown", winKeys);
+      cleanups.push(() => document.removeEventListener("keydown", winKeys));
+      scroller.addEventListener("scroll", closeImgBar);
+      // Start at the remembered zoom; "auto" fits narrow windows and stays at 100% on wide ones.
+      requestAnimationFrame(() => {
+        const z = zoomMode === "fit" ? fitZoom() : zoomMode === "auto" ? Math.min(1, fitZoom()) : Number(zoomMode) || 1;
+        setZoom(z);
+      });
+      let lastScrollW = 0;
+      const ro2 = new ResizeObserver(() => {
+        const w = scroller.clientWidth;
+        if (!w || w === lastScrollW) return;
+        lastScrollW = w;
+        if (zoomMode === "fit") setZoom(fitZoom());
+        else if (zoomMode === "auto") setZoom(Math.min(1, fitZoom()));
+      });
+      ro2.observe(scroller);
+      cleanups.push(() => ro2.disconnect());
       updateStatus();
       buildOutline();
+      drawTray();
       later();
       // Opened from search: show the matches in the doc.
       if (view.findQuery) {

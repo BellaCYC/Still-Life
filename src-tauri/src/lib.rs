@@ -1,4 +1,4 @@
-//! StillLife — v0.6.0
+//! StillLife — v0.7.0
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
@@ -439,6 +439,20 @@ fn notes_file(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_data_dir().ok().map(|dir| dir.join("notes.json"))
 }
 
+/// The name of this computer, shown in a doc's version history.
+#[tauri::command]
+fn device_name() -> String {
+    for key in ["COMPUTERNAME", "HOSTNAME", "NAME"] {
+        if let Ok(name) = std::env::var(key) {
+            let name = name.trim().to_string();
+            if !name.is_empty() {
+                return name;
+            }
+        }
+    }
+    "This computer".to_string()
+}
+
 /// Returns the saved notes as JSON text ("[]" when there are none yet).
 #[tauri::command]
 fn load_notes(app: AppHandle) -> String {
@@ -489,7 +503,8 @@ pub fn run() {
             set_island_enabled,
             island_enabled,
             load_notes,
-            save_notes
+            save_notes,
+            device_name
         ])
         .setup(|app| {
             // Remembered choices from last time.

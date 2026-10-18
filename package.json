@@ -1,7 +1,7 @@
 {
   "name": "still-life",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "StillLife — every note, quietly in orbit.",
   "scripts": {
     "tauri": "tauri",
