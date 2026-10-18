@@ -1,0 +1,58 @@
+# Builds the Windows installer and publishes it as a GitHub Release.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v0.1.0.
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reuse Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install tools
+        run: npm install
+
+      - name: Build installer and create the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "StillLife v__VERSION__"
+          releaseBody: |
+            Download **StillLife-Setup.exe** below and double-click it to install.
+            Windows may show "Windows protected your PC": click **More info**, then **Run anyway**.
+          releaseDraft: false
+          prerelease: false
+
+      - name: Add the one-click download file (StillLife-Setup.exe)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          SETUP=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -n 1)
+          cp "$SETUP" StillLife-Setup.exe
+          gh release upload "v$VERSION" StillLife-Setup.exe --clobber

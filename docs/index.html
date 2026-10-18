@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StillLife — download</title>
+  <meta name="description" content="StillLife: every note, quietly in orbit. Free download for Windows.">
+  <link rel="icon" href="icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #f5f5f4;
+      --ground: #ebe7e1;
+      --ink: #2f2e2b;
+      --muted: #5a5650;
+      --lavender: #c9c1e6;
+      --butter: #e6e3a8;
+      --sage: #b7c2ae;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: Manrope, system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+
+    header {
+      background: var(--paper);
+      padding: 64px 0 72px;
+    }
+    .hero {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 40px;
+    }
+    .hero img {
+      width: 240px;
+      max-width: 60vw;
+      border-radius: 22%;
+      box-shadow: 0 22px 48px rgba(60, 52, 44, 0.2);
+    }
+    .hero-text { flex: 1 1 320px; }
+    h1 {
+      margin: 0;
+      font-family: Newsreader, Georgia, serif;
+      font-style: italic;
+      font-weight: 400;
+      font-size: clamp(48px, 9vw, 84px);
+      line-height: 1;
+    }
+    .tagline {
+      margin: 14px 0 28px;
+      font-family: Newsreader, Georgia, serif;
+      font-size: 22px;
+      color: var(--muted);
+    }
+    .download {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 56px;
+      padding: 0 28px;
+      border-radius: 16px;
+      background: var(--ink);
+      color: #f3efe8;
+      font-size: 18px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .download:hover { background: #45433e; color: #ffffff; }
+    .meta { margin-top: 12px; font-size: 14px; color: var(--muted); }
+    .meta a { color: var(--muted); }
+
+    section { padding: 56px 0; }
+    h2 { margin: 0 0 24px; font-size: 26px; font-weight: 800; }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .step {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 22px;
+    }
+    .num {
+      display: inline-flex;
+      width: 32px; height: 32px;
+      align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: var(--lavender);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .step h3 { margin: 0 0 6px; font-size: 18px; }
+    .step p { margin: 0; color: var(--muted); }
+
+    .warning {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      align-items: center;
+      background: var(--card);
+      border-radius: 18px;
+      padding: 22px;
+    }
+    .mock {
+      flex: 0 1 360px;
+      background: #2b5a8a;
+      color: #ffffff;
+      border-radius: 8px;
+      padding: 18px 20px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+    }
+    .mock strong { display: block; font-size: 20px; font-weight: 400; margin-bottom: 8px; }
+    .mock .link { text-decoration: underline; outline: 2px solid var(--butter); outline-offset: 2px; }
+    .mock .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .mock .btns span { border: 1px solid #ffffff; padding: 4px 14px; }
+    .mock .btns .run { outline: 2px solid var(--butter); outline-offset: 2px; }
+    .warning-text { flex: 1 1 260px; }
+    .warning-text p { margin: 0 0 8px; }
+    .caption { font-size: 12px; color: var(--muted); }
+
+    footer { padding: 32px 0 48px; font-size: 13px; color: var(--muted); }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <img src="icon.png" alt="StillLife icon: a hand-drawn lavender Saturn with a soft yellow ring">
+      <div class="hero-text">
+        <h1>StillLife</h1>
+        <p class="tagline">Every note, quietly in orbit.</p>
+        <a class="download" href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Setup.exe">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+          Download for Windows
+        </a>
+        <p class="meta">Free · Windows 10 and 11 · Early preview ·
+          <a href="https://github.com/BellaCYC/Still-Life/releases">All versions</a></p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="wrap">
+        <h2>How to install</h2>
+        <div class="steps">
+          <div class="step">
+            <span class="num">1</span>
+            <h3>Download</h3>
+            <p>Click the button above. The file <strong>StillLife-Setup.exe</strong> saves to your Downloads folder.</p>
+          </div>
+          <div class="step">
+            <span class="num">2</span>
+            <h3>Open it</h3>
+            <p>Double-click the file. If a blue window appears, see the note below; it's normal.</p>
+          </div>
+          <div class="step">
+            <span class="num">3</span>
+            <h3>Done</h3>
+            <p>StillLife installs in a few seconds and opens. You'll find it in the Start menu.</p>
+          </div>
+        </div>
+
+        <div class="warning">
+          <div class="mock" role="img" aria-label="Illustration of the Windows warning screen, with the More info link and the Run anyway button highlighted">
+            <strong>Windows protected your PC</strong>
+            Windows stopped an unrecognised app from starting.
+            <div style="margin-top: 8px"><span class="link">More info</span></div>
+            <div class="btns"><span class="run">Run anyway</span><span>Don't run</span></div>
+          </div>
+          <div class="warning-text">
+            <p><strong>Seeing "Windows protected your PC"?</strong></p>
+            <p>That's normal for new apps from independent makers. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+            <p class="caption">Illustration only; the real window may look slightly different.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      Made by <a href="https://github.com/BellaCYC">BellaCYC</a> · Illustration by Bella ·
+      <a href="https://github.com/BellaCYC/Still-Life">Source on GitHub</a>
+    </div>
+  </footer>
+</body>
+</html>
