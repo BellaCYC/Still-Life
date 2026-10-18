@@ -7,78 +7,141 @@
   <style>
     :root {
       --paper: #f5f5f4;
-      --ink: #3a3833;
-      --muted: #6e6a62;
+      --ground: #efebe5;
+      --ink: #2f2e2b;
+      --muted: #5a5650;
       --lavender: #c9c1e6;
       --butter: #e6e3a8;
-      --graphite: #8a8778;
+      --sage: #b7c2ae;
+      --mist: #a9b7c2;
+      --rose: #d3b5af;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
     body {
-      background: var(--paper);
+      background: var(--ground);
       color: var(--ink);
-      font-family: Georgia, "Times New Roman", serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      user-select: none;
-    }
-    main {
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
       display: flex;
       flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 18px;
-      text-align: center;
-      padding: 24px;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 24px;
+      background: var(--paper);
+      border-bottom: 1px solid rgba(47, 46, 43, 0.08);
     }
-    img {
-      width: min(260px, 40vmin);
-      height: auto;
-      border-radius: 22%;
-      box-shadow: 0 18px 40px rgba(60, 52, 44, 0.18);
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .planet {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--paper) url("icon.png") center / 130% no-repeat;
+      box-shadow: inset 0 0 0 1px rgba(47, 46, 43, 0.08);
     }
-    h1 {
-      margin: 12px 0 0;
-      font-style: italic;
-      font-weight: 400;
-      font-size: clamp(40px, 8vmin, 64px);
-      letter-spacing: -0.01em;
+    .brand .name { font-family: Georgia, serif; font-style: italic; font-size: 22px; }
+    .brand .date { font-size: 12px; color: var(--muted); }
+
+    .tabs { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(47, 46, 43, 0.07); }
+    .tabs button {
+      height: 32px; padding: 0 16px; border: 0; border-radius: 999px;
+      background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: #4a4741; cursor: pointer;
     }
-    p { margin: 0; font-size: 18px; color: var(--muted); }
-    .dots { display: flex; gap: 8px; margin-top: 10px; }
-    .dots span { width: 7px; height: 7px; border-radius: 50%; }
-    .hint {
-      margin-top: 22px;
-      padding: 14px 20px;
-      border-radius: 14px;
-      background: #ffffff;
-      font-family: system-ui, sans-serif;
-      font-size: 15px;
-      line-height: 1.6;
-      color: var(--ink);
+    .tabs button.on { background: #ffffff; color: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+    .new {
+      height: 36px; padding: 0 16px; border: 0; border-radius: 999px;
+      background: var(--ink); color: #f3efe8; font: inherit; font-size: 13px; font-weight: 700;
+      opacity: 0.45; cursor: not-allowed;
     }
-    small {
-      line-height: 1.6;
-      margin-top: 18px;
-      font-family: system-ui, sans-serif;
-      font-size: 12px;
-      color: var(--muted);
+
+    main { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 24px; min-height: 0; }
+
+    .tip {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; border-radius: 14px; background: #ffffff;
+      font-size: 14px; line-height: 1.5;
     }
+    .tip .text { flex: 1; }
+    .tip button {
+      height: 32px; padding: 0 12px; border: 0; border-radius: 8px;
+      background: rgba(47, 46, 43, 0.07); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+
+    .empty {
+      flex: 1;
+      border-radius: 22px;
+      border: 2px dashed rgba(47, 46, 43, 0.16);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; text-align: center; padding: 24px;
+    }
+    .empty img { width: min(200px, 30vmin); height: auto; mix-blend-mode: multiply; }
+    .empty h1 { margin: 0; font-family: Georgia, serif; font-style: italic; font-weight: 400; font-size: 32px; }
+    .empty p { margin: 0; font-size: 15px; color: var(--muted); }
+    .swatches { display: flex; gap: 8px; margin-top: 6px; }
+    .swatches span { width: 26px; height: 26px; border-radius: 8px; }
+
+    footer { padding: 0 24px 16px; font-size: 12px; color: var(--muted); }
   </style>
 </head>
 <body>
-  <main>
-    <img src="icon.png" alt="StillLife: a hand-drawn lavender Saturn">
-    <h1>StillLife</h1>
-    <p>Every note, quietly in orbit.</p>
-    <div class="dots" aria-hidden="true">
-      <span style="background: var(--lavender)"></span>
-      <span style="background: var(--butter)"></span>
-      <span style="background: var(--graphite)"></span>
+  <header>
+    <div class="brand">
+      <span class="planet" aria-hidden="true"></span>
+      <div>
+        <div class="name">StillLife</div>
+        <div class="date" id="date"></div>
+      </div>
     </div>
-    <p class="hint">Move your cursor to the <strong>very top of the screen, near the middle</strong>,<br>and rest it there for a moment. The island will open.</p>
-    <small>Closing this window keeps StillLife running in the tray (bottom-right).<br>Early preview · version 0.2</small>
+    <div class="tabs" role="tablist" aria-label="Labels">
+      <button class="on" role="tab" aria-selected="true">All</button>
+      <button role="tab" aria-selected="false"><span class="dot" style="background: var(--mist)"></span>School</button>
+      <button role="tab" aria-selected="false"><span class="dot" style="background: var(--sage)"></span>Research</button>
+      <button role="tab" aria-selected="false"><span class="dot" style="background: var(--rose)"></span>Personal</button>
+    </div>
+    <button class="new" disabled title="Coming in version 0.3">+ New</button>
+  </header>
+
+  <main>
+    <div class="tip" id="tip">
+      <span class="planet" aria-hidden="true" style="width: 28px; height: 28px; flex-shrink: 0"></span>
+      <div class="text">
+        <strong>Quick look anytime:</strong> rest your cursor at the very top-middle of the screen to open the island.
+        Closing this window keeps StillLife running in the tray, bottom-right.
+      </div>
+      <button id="hide-tip">Got it</button>
+    </div>
+
+    <div class="empty">
+      <img src="icon.png" alt="">
+      <h1>Your notes will land here.</h1>
+      <p>Agendas and docs arrive in version 0.3.</p>
+      <div class="swatches" aria-hidden="true">
+        <span style="background: var(--sage)"></span>
+        <span style="background: var(--mist)"></span>
+        <span style="background: var(--rose)"></span>
+        <span style="background: var(--butter)"></span>
+        <span style="background: var(--lavender)"></span>
+      </div>
+    </div>
   </main>
+
+  <footer>Every note, quietly in orbit. · Early preview · version 0.2.1</footer>
+
+  <script>
+    document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, {
+      weekday: "long", day: "numeric", month: "long", year: "numeric"
+    });
+    const tip = document.getElementById("tip");
+    try { if (localStorage.getItem("tipHidden") === "1") tip.remove(); } catch (e) {}
+    document.getElementById("hide-tip").addEventListener("click", () => {
+      tip.remove();
+      try { localStorage.setItem("tipHidden", "1"); } catch (e) {}
+    });
+  </script>
 </body>
 </html>

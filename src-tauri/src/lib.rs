@@ -1,4 +1,4 @@
-//! StillLife — v0.2
+//! StillLife — v0.2.1
 //!
 //! Two windows:
 //! - "main":   the welcome window. Closing it hides it; StillLife keeps running in the tray.
@@ -9,11 +9,15 @@
 //! edge near the middle, the island grows ("glance"); if the cursor stays there for a
 //! moment, it opens into the glass plate ("open"). Moving away folds it back up.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+
+/// Set when the plate asks to fold up straight away (e.g. after opening the full window).
+struct FoldRequest(AtomicBool);
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum IslandState {
@@ -37,7 +41,7 @@ const POLL_MS: u64 = 40;
 /// How long the cursor rests at the top before the plate opens.
 const OPEN_DELAY_MS: u64 = 350;
 /// How long the cursor can be away from the plate before it folds up.
-const CLOSE_DELAY_MS: u64 = 450;
+const CLOSE_DELAY_MS: u64 = 200;
 /// Distance from the top edge that counts as "touching" it (logical pixels).
 const TOP_EDGE: f64 = 3.0;
 /// While glancing, the cursor may drift this far down without closing (logical pixels).
@@ -107,7 +111,12 @@ fn watch_cursor(app: AppHandle) {
                 _ => false,
             };
 
-            let next = match state {
+            let fold_now = app.state::<FoldRequest>().0.swap(false, Ordering::SeqCst);
+
+            let next = if fold_now && state != IslandState::Rest {
+                Some(IslandState::Rest)
+            } else {
+                match state {
                 IslandState::Rest => touching_top.then_some(IslandState::Glance),
                 IslandState::Glance => {
                     if !near_top {
@@ -127,6 +136,7 @@ fn watch_cursor(app: AppHandle) {
                     } else {
                         None
                     }
+                }
                 }
             };
 
@@ -153,9 +163,18 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// Called from the plate's "Open full window" button.
+#[tauri::command]
+fn open_full_window(app: AppHandle, fold: tauri::State<'_, FoldRequest>) {
+    fold.0.store(true, Ordering::SeqCst);
+    show_main(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(FoldRequest(AtomicBool::new(false)))
+        .invoke_handler(tauri::generate_handler![open_full_window])
         .setup(|app| {
             // Tray icon, so StillLife can keep running with the welcome window closed.
             let open_item = MenuItem::with_id(app, "open", "Open StillLife", true, None::<&str>)?;

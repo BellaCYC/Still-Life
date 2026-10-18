@@ -157,6 +157,24 @@
       cursor: not-allowed;
     }
 
+    .actions { display: flex; gap: 8px; }
+    .full {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 36px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(47, 46, 43, 0.08);
+      color: var(--ink);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .full:hover { background: rgba(47, 46, 43, 0.14); }
+
     .empty {
       flex: 1;
       border-radius: 20px;
@@ -219,7 +237,13 @@
           <button role="tab" aria-selected="false"><span class="dot" style="background: var(--sage)"></span>Research</button>
           <button role="tab" aria-selected="false"><span class="dot" style="background: var(--rose)"></span>Personal</button>
         </div>
-        <button class="new" disabled title="Coming in version 0.3">+ New</button>
+        <div class="actions">
+          <button class="full" id="full" title="Open StillLife in a full window for longer sessions">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>
+            Open full window
+          </button>
+          <button class="new" disabled title="Coming in version 0.3">+ New</button>
+        </div>
       </div>
 
       <div class="empty">
@@ -237,7 +261,7 @@
 
       <div class="foot">
         <span>Move the cursor away to close</span>
-        <span>StillLife · version 0.2</span>
+        <span>StillLife · version 0.2.1</span>
       </div>
     </div>
 
@@ -249,6 +273,9 @@
     });
 
     const tauri = window.__TAURI__;
+    document.getElementById("full").addEventListener("click", () => {
+      if (tauri && tauri.core) tauri.core.invoke("open_full_window");
+    });
     if (tauri && tauri.event) {
       tauri.event.listen("island-state", (event) => {
         document.body.dataset.state = event.payload;
