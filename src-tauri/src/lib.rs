@@ -1,4 +1,4 @@
-//! StillLife — v0.7.0
+//! StillLife — v1.0.0
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
@@ -439,6 +439,14 @@ fn notes_file(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_data_dir().ok().map(|dir| dir.join("notes.json"))
 }
 
+/// F11 in the full window: switch full screen on or off.
+#[tauri::command]
+fn toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    let on = !window.is_fullscreen().map_err(|e| e.to_string())?;
+    window.set_fullscreen(on).map_err(|e| e.to_string())?;
+    Ok(on)
+}
+
 /// The name of this computer, shown in a doc's version history.
 #[tauri::command]
 fn device_name() -> String {
@@ -674,7 +682,8 @@ pub fn run() {
             save_media,
             load_media,
             delete_media,
-            web_request
+            web_request,
+            toggle_fullscreen
         ])
         .setup(|app| {
             // Remembered choices from last time.
