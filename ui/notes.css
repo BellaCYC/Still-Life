@@ -560,6 +560,15 @@ button.sl-th:hover, .sl-th.on { color: var(--ink); }
 }
 .sl-swatch:hover { transform: scale(1.12); }
 .sl-swatch.on { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+.sl-swatch-wrap { position: relative; display: inline-flex; }
+.sl-swatch-x {
+  position: absolute; top: -5px; right: -5px; width: 17px; height: 17px; border: 0; padding: 0; border-radius: 50%;
+  background: #ffffff; color: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  display: inline-flex; align-items: center; justify-content: center; opacity: 0; transform: scale(0.7);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.sl-swatch-wrap:hover .sl-swatch-x, .sl-swatch-x:focus-visible { opacity: 1; transform: scale(1); }
+.sl-swatch-x:hover { background: #f2e3df; color: var(--brick); }
 .sl-swatch.none { background: linear-gradient(135deg, #ffffff 45%, #c97a6e 45%, #c97a6e 55%, #ffffff 55%); }
 .sl-color-menu .sl-row > * { flex: 1; display: inline-flex !important; flex-direction: row !important; align-items: center; justify-content: center; gap: 6px; height: 30px; color: var(--ink) !important; font-size: 12px !important; font-weight: 700 !important; }
 .sl-custom { position: relative; cursor: pointer; }

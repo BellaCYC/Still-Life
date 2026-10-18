@@ -72,7 +72,7 @@
     "Corner clock and battery": "右上角時鐘與電量", "Show the date, time and battery in the full window": "在完整視窗顯示日期、時間與電量",
     "Your notes": "你的筆記", "About": "關於", "Live captions while recording (when Windows offers them)": "錄音時即時字幕（Windows 支援時）",
     "Quick ball": "快捷球", "Show the quick ball": "顯示快捷球", "New agenda": "新增待辦", "New doc": "新增文件", "Search notes": "搜尋筆記",
-    "Import files": "匯入檔案", "Island on": "動態島：開", "Island off": "動態島：關", "Got it": "知道了", "Font": "字型", "Default": "預設",
+    "Import files": "匯入檔案", "Island on": "動態島：開", "Island off": "動態島：關", "Got it": "知道了", "Font": "字型", "Remove this colour": "移除這個顏色", "Default": "預設",
     "Serif": "襯線體", "Handwriting": "手寫體", "Neat handwriting": "工整手寫", "Script": "草寫", "Typewriter": "打字機", "text → handwriting": "文字 → 手寫",
     "GENERAL": "一般", "DOCS": "文件", "DRAWING": "繪圖", "YOUR NOTES": "你的筆記", "ABOUT": "關於", "Back up": "備份", "Import…": "匯入…",
     "Turn it off before exams or presentations.": "考試或簡報前可以關掉。", "A floating button for new notes, search and more.": "浮動按鈕，快速新增筆記、搜尋等。",

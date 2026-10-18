@@ -13,7 +13,7 @@
   "use strict";
 
   const tauri = window.__TAURI__;
-  const VERSION = "1.0";
+  const VERSION = "1.0.1";
   const hasApp = !!(tauri && tauri.core);
 
   const COLORS = ["sage", "mist", "rose", "oat", "lilac", "clay", "celadon", "lavender"];
@@ -1463,7 +1463,21 @@
         if (o.none) grid.append(el("button", { class: "sl-swatch none", title: "No highlight", "aria-label": "No highlight", onmousedown: keep, onclick: () => pick("transparent") }));
         const mine = data.settings.customColors || [];
         const customs = el("div", { class: "sl-palette" });
-        for (const v of mine) customs.append(swatch(v.toUpperCase(), v));
+        // Your own colours can be removed: hover and press ×, or right-click.
+        const removeColor = (v) => {
+          data.settings.customColors = (data.settings.customColors || []).filter((x) => x !== v);
+          save();
+          colorPicker(anchor, o);
+        };
+        for (const v of mine) {
+          const sw = swatch(v.toUpperCase(), v);
+          sw.addEventListener("contextmenu", (e) => { e.preventDefault(); removeColor(v); });
+          customs.append(el("span", { class: "sl-swatch-wrap" }, sw,
+            el("button", {
+              class: "sl-swatch-x", title: "Remove this colour", "aria-label": "Remove colour " + v.toUpperCase(),
+              onmousedown: keep, onclick: (e) => { e.stopPropagation(); removeColor(v); },
+            }, svg(ICON.x, 9))));
+        }
         const input = el("input", {
           type: "color", class: "sl-color-input", "aria-label": "Choose any colour",
           value: /^#[0-9a-f]{6}$/i.test(o.current || "") ? o.current : "#6f8a6a",
