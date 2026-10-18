@@ -1,4 +1,4 @@
-//! StillLife — v0.2.1
+//! StillLife — v0.2.2
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
@@ -59,6 +59,10 @@ const GLANCE_DEPTH: f64 = 80.0;
 const CENTRE_HALF_WIDTH: f64 = 320.0;
 /// Extra margin around the open plate before it counts as "left" (logical pixels).
 const PLATE_MARGIN: f64 = 24.0;
+/// Size of the open plate as drawn in island.html (logical pixels): 960 wide,
+/// 560 tall plus its 6 px gap from the top edge.
+const PLATE_WIDTH: f64 = 960.0;
+const PLATE_BOTTOM: f64 = 566.0;
 
 /// Places the island at the top-centre of the given monitor area.
 fn place_island(island: &WebviewWindow, mon_x: i32, mon_y: i32, mon_width: u32) {
@@ -153,13 +157,19 @@ fn watch_cursor(app: AppHandle) {
             let touching_top = in_centre && from_top <= TOP_EDGE * scale;
             let near_top = in_centre && from_top <= GLANCE_DEPTH * scale;
 
+            // The visible plate sits centred at the top of the (larger, transparent) window,
+            // which leaves room for its shadow. Measure against the plate itself.
             let near_plate = match (island.outer_position(), island.outer_size()) {
                 (Ok(p), Ok(s)) => {
                     let m = PLATE_MARGIN * scale;
-                    cursor.x >= p.x as f64 - m
-                        && cursor.x <= p.x as f64 + s.width as f64 + m
-                        && cursor.y >= p.y as f64 - m
-                        && cursor.y <= p.y as f64 + s.height as f64 + m
+                    let plate_w = PLATE_WIDTH * scale;
+                    let left = p.x as f64 + (s.width as f64 - plate_w) / 2.0;
+                    let top = p.y as f64;
+                    let bottom = top + PLATE_BOTTOM * scale;
+                    cursor.x >= left - m
+                        && cursor.x <= left + plate_w + m
+                        && cursor.y >= top - m
+                        && cursor.y <= bottom + m
                 }
                 _ => false,
             };
