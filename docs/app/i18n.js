@@ -77,6 +77,7 @@
     "Picture": "圖片", "Photo": "相片", "Screenshot": "截圖", "Symbol": "符號", "Sticker": "貼紙", "Recording": "錄音", "Divider": "分隔線",
     "From a file, or paste one": "從檔案，或直接貼上", "Use the camera": "使用相機", "Win+Shift+S, then Ctrl+V": "Win+Shift+S，再按 Ctrl+V",
     "Cute stickers, or your own": "可愛貼紙或自製貼紙", "Record a lecture": "錄下課堂", "A line across the page": "橫跨頁面的線", "Start a new page": "開始新的一頁",
+    "Tap a colour to remove it.": "點一下顏色就能移除。", "All the ready-made colours are removed.": "內建顏色都已移除。",
     "PAPER WIDTH": "紙張寬度", "Make the paper wider →": "把紙張加寬 →", "Trim the empty paper on the right": "剪掉右邊空白的紙",
     "Back to one page wide": "回到一頁寬", "Wider →": "加寬 →", "Trim width": "剪掉多餘寬度",
     "The paper can keep going sideways, for timelines, mind maps and wide diagrams. Your typing stays in the first column; the paper added on the right is for drawing, and it also widens by itself when you draw near the edge.": "紙張可以一直往右延伸，適合時間軸、心智圖和很寬的圖。打字的內容留在第一欄；右邊加上的紙是用來手寫和畫圖的，畫到靠近邊緣時也會自動加寬。",

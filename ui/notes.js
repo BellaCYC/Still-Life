@@ -1740,45 +1740,73 @@
       // A full colour picker: palette, your own colours, any custom colour, and the eyedropper.
       function colorPicker(anchor, o) {
         closeMenu();
+        // The pen tray redraws after a colour is removed; find its new button to stay beside.
+        if (!anchor.isConnected && o.anchorSel) anchor = root.querySelector(o.anchorSel) || anchor;
         const keep = (e) => e.preventDefault();
         const pick = (v) => { closeMenu(); o.onPick(v); };
         const cur = String(o.current || "").toLowerCase();
-        const swatch = (name, value) => el("button", {
-          class: "sl-swatch" + (cur === value.toLowerCase() ? " on" : ""),
-          style: "background:" + value, title: name, "aria-label": name,
-          onmousedown: keep, onclick: () => pick(value),
-        });
-        const grid = el("div", { class: "sl-palette" });
-        for (const [name, value] of o.colors) grid.append(swatch(name, value));
-        if (o.none) grid.append(el("button", { class: "sl-swatch none", title: "No highlight", "aria-label": "No highlight", onmousedown: keep, onclick: () => pick("transparent") }));
-        const mine = data.settings.customColors || [];
-        const customs = el("div", { class: "sl-palette" });
-        // Your own colours can be removed: hover and press ×, or right-click.
-        const removeColor = (v) => {
-          data.settings.customColors = (data.settings.customColors || []).filter((x) => x !== v);
+        const editing = !!o.editing;
+        const again = (extra) => colorPicker(anchor, Object.assign({}, o, extra));
+        // Any colour can be removed: press Edit, then tap a colour (or right-click one any time).
+        const hidden = new Set((data.settings.hiddenColors || []).map((x) => x.toLowerCase()));
+        const removeColor = (v, isMine) => {
+          if (isMine) data.settings.customColors = (data.settings.customColors || []).filter((x) => x !== v);
+          else data.settings.hiddenColors = Array.from(new Set((data.settings.hiddenColors || []).concat(v.toLowerCase())));
           save();
-          colorPicker(anchor, o);
+          if (o.onChange) o.onChange();
+          again({ editing: true });
         };
-        for (const v of mine) {
-          const sw = swatch(v.toUpperCase(), v);
-          sw.addEventListener("contextmenu", (e) => { e.preventDefault(); removeColor(v); });
-          customs.append(el("span", { class: "sl-swatch-wrap" }, sw,
+        const swatch = (name, value, isMine) => {
+          const b = el("button", {
+            class: "sl-swatch" + (!editing && cur === value.toLowerCase() ? " on" : ""),
+            style: "background:" + value,
+            title: editing ? "Remove " + name : name + " (right-click to remove)",
+            "aria-label": editing ? "Remove " + name : name,
+            onmousedown: keep, onclick: () => (editing ? removeColor(value, isMine) : pick(value)),
+          });
+          b.addEventListener("contextmenu", (e) => { e.preventDefault(); removeColor(value, isMine); });
+          return el("span", { class: "sl-swatch-wrap" }, b,
             el("button", {
-              class: "sl-swatch-x", title: "Remove this colour", "aria-label": "Remove colour " + v.toUpperCase(),
-              onmousedown: keep, onclick: (e) => { e.stopPropagation(); removeColor(v); },
-            }, svg(ICON.x, 9))));
-        }
+              class: "sl-swatch-x", tabindex: editing ? "0" : "-1", title: "Remove this colour", "aria-label": "Remove colour " + name,
+              onmousedown: keep, onclick: (e) => { e.stopPropagation(); removeColor(value, isMine); },
+            }, svg(ICON.x, 9)));
+        };
+        const grid = el("div", { class: "sl-palette" + (editing ? " editing" : "") });
+        const shown = o.colors.filter(([, value]) => !hidden.has(value.toLowerCase()));
+        for (const [name, value] of shown) grid.append(swatch(name, value, false));
+        if (o.none && !editing) grid.append(el("button", { class: "sl-swatch none", title: "No highlight", "aria-label": "No highlight", onmousedown: keep, onclick: () => pick("transparent") }));
+        const hiddenHere = o.colors.filter(([, value]) => hidden.has(value.toLowerCase())).length;
+        const mine = data.settings.customColors || [];
+        const customs = el("div", { class: "sl-palette" + (editing ? " editing" : "") });
+        for (const v of mine) customs.append(swatch(v.toUpperCase(), v, true));
         const input = el("input", {
           type: "color", class: "sl-color-input", "aria-label": "Choose any colour",
           value: /^#[0-9a-f]{6}$/i.test(o.current || "") ? o.current : "#6f8a6a",
           onchange: (e) => { addCustomColor(e.target.value); pick(e.target.value); },
         });
         const note2 = el("span", { class: "sl-g-note", hidden: true, text: "The eyedropper isn't available on this computer; use Custom instead." });
+        const editBtn = el("button", {
+          class: "sl-color-edit" + (editing ? " on" : ""), onmousedown: keep,
+          title: editing ? "Finish removing colours" : "Remove colours you don't use",
+          onclick: () => again({ editing: !editing }),
+        }, editing ? "Done" : "Edit");
         menu = el("div", { class: "sl-menu sl-color-menu wide", role: "dialog", "aria-label": o.title },
-          el("span", { class: "sl-choice-head", text: o.title.toUpperCase() }), grid,
+          el("div", { class: "sl-color-head" }, el("span", { class: "sl-choice-head", text: o.title.toUpperCase() }), editBtn),
+          editing ? el("span", { class: "sl-g-note sl-color-tip", text: "Tap a colour to remove it." }) : null,
+          shown.length ? grid : el("span", { class: "sl-g-note", text: "All the ready-made colours are removed." }),
+          editing && hiddenHere ? el("button", {
+            class: "sl-color-restore", onmousedown: keep,
+            onclick: () => {
+              const mineHere = new Set(o.colors.map(([, v]) => v.toLowerCase()));
+              data.settings.hiddenColors = (data.settings.hiddenColors || []).filter((x) => !mineHere.has(x.toLowerCase()));
+              save();
+              if (o.onChange) o.onChange();
+              again({ editing: true });
+            },
+          }, "Bring back " + hiddenHere + (hiddenHere === 1 ? " removed colour" : " removed colours")) : null,
           el("span", { class: "sl-choice-head", text: "YOUR COLOURS" }),
           mine.length ? customs : el("span", { class: "sl-g-note", text: "Colours you pick with Custom or the eyedropper are kept here." }),
-          el("div", { class: "sl-row" },
+          editing ? null : el("div", { class: "sl-row" },
             el("label", { class: "sl-pill sl-custom", title: "Choose any colour" }, el("span", { class: "sl-rainbow", "aria-hidden": "true" }), "Custom", input),
             el("button", {
               class: "sl-pill", title: "Pick a colour from anywhere on the screen", onmousedown: keep,
@@ -1786,7 +1814,7 @@
             }, svg(ICON.dropper, 14), "Eyedropper")),
           note2);
         root.append(menu);
-        placeMenu(anchor, 300, 340);
+        placeMenu(anchor, 300, 360);
       }
       function swatchMenu(anchor, title, colors, cmd) {
         closeMenu();
@@ -3737,7 +3765,8 @@
           tray.append(el("span", { class: "sl-tray-opt", text: "Draw around strokes or stickers, then drag, resize, recolour or delete them." }));
         } else {
           const c = curPen();
-          const quick = c.tool === "hl" ? HL_PALETTE.slice(0, 7) : PEN_PALETTE.slice(0, 7);
+          const gone = new Set((data.settings.hiddenColors || []).map((x) => x.toLowerCase()));
+          const quick = (c.tool === "hl" ? HL_PALETTE : PEN_PALETTE).filter((x) => !gone.has(x[1].toLowerCase())).slice(0, 7);
           const recent = (data.settings.customColors || []).slice(0, 3);
           const dots = el("div", { class: "sl-pen-colors" });
           const list = quick.map((x) => x[1]).concat(recent.filter((x) => !quick.some((q) => q[1] === x)));
@@ -3752,7 +3781,7 @@
           }
           dots.append(el("button", {
             class: "sl-pen-dot sl-more-colors", "aria-label": "More colours", title: "More colours, custom colour and eyedropper",
-            onclick: (e) => colorPicker(e.currentTarget, { title: c.tool === "hl" ? "Highlighter colour" : "Pen colour", colors: c.tool === "hl" ? HL_PALETTE : PEN_PALETTE, current: c.color, onPick: (v) => { c.color = v; trayColor(c); } }),
+            onclick: (e) => colorPicker(e.currentTarget, { title: c.tool === "hl" ? "Highlighter colour" : "Pen colour", colors: c.tool === "hl" ? HL_PALETTE : PEN_PALETTE, current: c.color, onPick: (v) => { c.color = v; trayColor(c); }, onChange: () => drawTray(), anchorSel: ".sl-more-colors" }),
           }));
           const dropper = el("button", {
             class: "sl-tool", "aria-label": "Eyedropper: pick any colour on screen", title: "Eyedropper: pick any colour on screen",
