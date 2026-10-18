@@ -75,6 +75,12 @@
     strike: '<path d="M5 12h14M16 6.5A4 3 0 0 0 8 8c0 4 8 3 8 7a4 3 0 0 1-8 1.5"/>',
     ul: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
     ol: '<path d="M10 6h10M10 12h10M10 18h10M4 5h1v4M4 9h2M4 14h2l-2 3h2"/>',
+    pages: '<rect x="5" y="2.5" width="14" height="8" rx="1.5"/><rect x="5" y="13.5" width="14" height="8" rx="1.5"/>',
+    find: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+    grammar: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13 15l3 3 5-6"/>',
+    keys: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
+    chevron: '<path d="M6 9l6 6 6-6"/>',
+    up: '<path d="M6 15l6-6 6 6"/>',
   };
   function todayStr(offsetDays) {
     const d = new Date();
@@ -111,7 +117,7 @@
   // odd links) is stripped. Parsing happens in an inert document, so nothing runs.
   const ALLOWED = {
     P: ["style"], DIV: ["style"], BR: [], H1: ["style"], H2: ["style"], H3: ["style"], B: [], STRONG: [], I: [], EM: [], U: [],
-    S: [], STRIKE: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: [], CODE: [], PRE: [], SPAN: ["style"],
+    S: [], STRIKE: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: ["class"], CODE: [], PRE: [], SPAN: ["style"],
     FONT: ["color"], A: ["href"],
   };
   const SAFE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]+)$/i;
@@ -125,6 +131,11 @@
       const val = part.slice(i + 1).trim();
       if ((prop === "color" || prop === "background-color") && SAFE_COLOR.test(val)) keep.push(prop + ": " + val);
       else if (prop === "text-align" && /^(left|center|right|justify)$/i.test(val)) keep.push(prop + ": " + val.toLowerCase());
+      else if (prop === "font-weight" && /^(bold|bolder|[6-9]00)$/i.test(val)) keep.push("font-weight: bold");
+      else if (prop === "font-style" && /^italic$/i.test(val)) keep.push("font-style: italic");
+      else if ((prop === "text-decoration" || prop === "text-decoration-line") && /(underline|line-through)/i.test(val)) {
+        keep.push("text-decoration: " + (val.match(/underline|line-through/gi) || []).map((x) => x.toLowerCase()).join(" "));
+      }
     }
     return keep.join("; ");
   }
@@ -143,6 +154,7 @@
             let keep = ALLOWED[tag].includes(attr.name);
             if (keep && attr.name === "href") keep = /^(https?:|mailto:)/i.test(attr.value.trim());
             if (keep && attr.name === "color") keep = SAFE_COLOR.test(attr.value.trim());
+            if (keep && attr.name === "class") keep = attr.value.trim() === "sl-pb"; // page break only
             if (keep && attr.name === "style") {
               const clean = safeStyle(attr.value);
               if (clean) child.setAttribute("style", clean);
@@ -168,8 +180,231 @@
     return (doc.body.textContent || "").replace(/\s+/g, " ").trim();
   }
 
+
+  // ---------- rounded dropdown (replaces the browser's sharp-edged <select>) ----------
+  // o = { label, options: [{ value, text, cls, hint }], value, onPick(value), keepFocus, onOpen, cls }
+  function dropdown(o) {
+    let value = o.value;
+    let pop = null;
+    let active = -1;
+    const text = el("span", { class: "sl-dd-text" });
+    const btn = el("button", {
+      type: "button",
+      class: "sl-dd-btn",
+      "aria-haspopup": "listbox",
+      "aria-expanded": "false",
+      "aria-label": o.label,
+      title: o.label,
+      // In the doc toolbar the text keeps focus, so the selection survives.
+      onmousedown: (e) => { if (o.keepFocus) { if (o.onOpen) o.onOpen(); e.preventDefault(); } },
+      onclick: () => (pop ? close() : open()),
+      onkeydown: (e) => {
+        if (pop) keys(e);
+        else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); open(); }
+      },
+    }, text, svg(ICON.chevron, 14));
+    const wrap = el("div", { class: "sl-dd" + (o.cls ? " " + o.cls : "") }, btn);
+    function show() {
+      const opt = o.options.find((x) => x.value === value) || o.options[0];
+      text.textContent = opt ? opt.text : "";
+    }
+    function open() {
+      pop = el("div", { class: "sl-dd-pop", role: "listbox", "aria-label": o.label });
+      o.options.forEach((opt, i) => {
+        pop.append(el("div", {
+          class: "sl-dd-opt" + (opt.cls ? " " + opt.cls : "") + (opt.value === value ? " on" : ""),
+          role: "option",
+          "aria-selected": opt.value === value ? "true" : "false",
+          onmousedown: (e) => e.preventDefault(),
+          onmouseenter: () => setActive(i),
+          onclick: () => pick(opt.value),
+        }, el("span", { class: "sl-dd-label", text: opt.text }), opt.hint ? el("span", { class: "sl-dd-hint", text: opt.hint }) : null));
+      });
+      wrap.append(pop);
+      wrap.classList.add("open");
+      btn.setAttribute("aria-expanded", "true");
+      setActive(o.options.findIndex((x) => x.value === value));
+      if (pop.getBoundingClientRect().bottom > window.innerHeight - 8) pop.classList.add("up");
+      setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+      document.addEventListener("keydown", keys, true);
+    }
+    function close() {
+      if (!pop) return;
+      pop.remove();
+      pop = null;
+      wrap.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+      document.removeEventListener("mousedown", away, true);
+      document.removeEventListener("keydown", keys, true);
+    }
+    function away(e) { if (!wrap.contains(e.target)) close(); }
+    function setActive(i) {
+      active = i;
+      if (pop) Array.from(pop.children).forEach((c, j) => c.classList.toggle("active", j === i));
+    }
+    function keys(e) {
+      if (!pop) return;
+      if (e.key === "ArrowDown") setActive(Math.min(o.options.length - 1, active + 1));
+      else if (e.key === "ArrowUp") setActive(Math.max(0, active - 1));
+      else if (e.key === "Enter") { if (active >= 0) pick(o.options[active].value); }
+      else if (e.key === "Escape") close();
+      else { if (e.key === "Tab") close(); return; }
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    function pick(v) { value = v; show(); close(); o.onPick(v); }
+    show();
+    return { el: wrap, set(v) { value = v; show(); }, close };
+  }
+
+  // ---------- grammar checker: English rules, runs offline ----------
+  const SPELLING = {
+    alot: "a lot", definately: "definitely", definatly: "definitely", seperate: "separate", recieve: "receive",
+    occured: "occurred", untill: "until", wich: "which", becuase: "because", beacuse: "because", thier: "their",
+    teh: "the", beleive: "believe", goverment: "government", enviroment: "environment", accomodate: "accommodate",
+    arguement: "argument", begining: "beginning", tommorow: "tomorrow", tommorrow: "tomorrow", tomorow: "tomorrow",
+    wierd: "weird", truely: "truly", publically: "publicly", existance: "existence", independant: "independent",
+    occurence: "occurrence", neccessary: "necessary", necesary: "necessary", succesful: "successful",
+    successfull: "successful", irregardless: "regardless", embarass: "embarrass", calender: "calendar",
+    concious: "conscious", experiance: "experience", freind: "friend", greatful: "grateful", knowlege: "knowledge",
+    maintainance: "maintenance", noticable: "noticeable", persue: "pursue", posession: "possession",
+    prefered: "preferred", recomend: "recommend", refered: "referred", relevent: "relevant", resturant: "restaurant",
+    rythm: "rhythm", sentance: "sentence", suprise: "surprise", tounge: "tongue", writting: "writing",
+  };
+  function keepCase(orig, fix) {
+    if (!fix) return fix;
+    if (orig.length > 1 && orig === orig.toUpperCase() && /[A-Z]/.test(orig)) return fix.toUpperCase();
+    if (/^[A-Z]/.test(orig)) return fix[0].toUpperCase() + fix.slice(1);
+    return fix;
+  }
+  const PHRASES = [
+    [/\b(could|should|would|must|might)\s+of\b/gi, (m) => m[1] + " have", "After “could”, “should” or “would”, write “have”, not “of”."],
+    [/\b(more|less|better|worse|rather|other|bigger|smaller|faster|slower|greater|higher|lower|larger|older|younger|easier|harder|earlier|later)\s+then\b/gi, (m) => m[1] + " than", "Use “than” when comparing."],
+    [/\byour\s+welcome\b/gi, () => "you're welcome", "Did you mean “you're” (you are)?"],
+    [/\bits\s+(a|an|the|not|been|going|very|so|also|just|really|important|possible|impossible|hard|easy|true|okay|ok|fine|clear)\b/gi, (m) => "it's " + m[1], "Did you mean “it's” (it is)?"],
+    [/\bit's\s+own\b/gi, () => "its own", "Use “its” (no apostrophe) to show belonging."],
+    [/\b(he|she|it)\s+don't\b/gi, (m) => m[1] + " doesn't", "Use “doesn't” with he, she or it."],
+    [/\b(he|she|it)\s+were\b(?!\s+to\b)/gi, (m) => m[1] + " was", "Use “was” with he, she or it."],
+    [/\b(they|we|you)\s+was\b/gi, (m) => m[1] + " were", "Use “were” with they, we or you."],
+    [/\b(he|she)\s+are\b/gi, (m) => m[1] + " is", "Use “is” with he or she."],
+    [/\bI\s+is\b/g, () => "I am", "Use “am” with I."],
+    [/(?<!\b(?:does|did|do|will|would|can|could|should|may|might|must|to|let|make|makes|made|help|helps|n't|not|doesn't|didn't)\s)\b(he|she|it)\s+have\b(?!\s+to\s+be\b)/gi, (m) => m[1] + " has", "Use “has” with he, she or it."],
+    [/\bmore\s+(better|worse|easier|harder|faster|bigger|smaller|greater)\b/gi, (m) => m[1], "“More” isn't needed here."],
+    [/\bbetween\s+you\s+and\s+I\b/gi, () => "between you and me", "After “between”, use “me”."],
+    [/\b(am|is|are|was|were|be|been)\s+suppose\s+to\b/gi, (m) => m[1] + " supposed to", "Write “supposed to”."],
+    [/\bcould\s+care\s+less\b/gi, () => "couldn't care less", "The phrase is “couldn't care less”."],
+    [/\bfor\s+all\s+intensive\s+purposes\b/gi, () => "for all intents and purposes", "The phrase is “for all intents and purposes”."],
+    [/\bthere\s+(own|homework|parents|friends|teacher|teachers|school|names?|house|car)\b/gi, (m) => "their " + m[1], "Did you mean “their” (belonging to them)?"],
+    [/\bthey're\s+(own|homework|parents|friends|teacher|teachers|school|names?|house|car)\b/gi, (m) => "their " + m[1], "Did you mean “their” (belonging to them)?"],
+  ];
+  const ABBREV = /\b(e\.g|i\.e|etc|vs|approx|mr|mrs|ms|dr|prof|st|no|fig|cf|al|pp?|ca|jr|sr|inc|ltd)\.$/i;
+  const FULLWIDTH = { "，": ",", "。": ".", "；": ";", "：": ":", "！": "!", "？": "?" };
+
+  // Returns [{ start, end, fix, msg, orig }] for one block of text.
+  function grammarCheck(raw, listItem) {
+    const s = raw.replace(/ /g, " ");
+    const out = [];
+    function add(start, end, fix, msg) {
+      const orig = s.slice(start, end);
+      if (orig !== fix) out.push({ start, end, fix, msg, orig });
+    }
+    function each(re, fn) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(s))) {
+        fn(m);
+        if (!m[0]) re.lastIndex++;
+      }
+    }
+
+    // Common misspellings
+    each(/[A-Za-z]+/g, (m) => {
+      const fix = SPELLING[m[0].toLowerCase()];
+      if (fix) add(m.index, m.index + m[0].length, keepCase(m[0], fix), "Spelling: did you mean “" + fix + "”?");
+    });
+    // Mixed-up words and phrases
+    for (const [re, fix, msg] of PHRASES) each(re, (m) => add(m.index, m.index + m[0].length, keepCase(m[0], fix(m)), msg));
+
+    // Repeated word: "the the"
+    each(/\b([A-Za-z']+)(\s+)\1\b/gi, (m) => {
+      if (["had", "that"].includes(m[1].toLowerCase())) return;
+      add(m.index, m.index + m[0].length, m[1], "This word is repeated.");
+    });
+
+    // a / an
+    each(/\b(a|an|A|An)\s+([A-Za-z][\w'-]*)/g, (m) => {
+      const art = m[1];
+      const word = m[2];
+      const lw = word.toLowerCase();
+      if (word.length > 1 && word === word.toUpperCase()) return; // acronyms: a NASA, an FBI
+      if (/^(and|or|to|is|was|the|of|in|on|at)$/.test(lw)) return; // "a" used as a letter
+      const before = s.slice(Math.max(0, m.index - 1), m.index);
+      if (/[(\w'’-]/.test(before)) return;
+      if (lw[0] === "u") return; // a university / an umbrella: too ambiguous
+      const wantAn = ("aeio".includes(lw[0]) && !/^(one|once|eu|ewe)/.test(lw)) || /^(hour|honest|honou?r|heir)/.test(lw);
+      const isAn = art.toLowerCase() === "an";
+      if (wantAn === isAn) return;
+      add(m.index, m.index + art.length, keepCase(art, wantAn ? "an" : "a"),
+        wantAn ? "Use “an” before a vowel sound." : "Use “a” before a consonant sound.");
+    });
+
+    // Lowercase "i" on its own
+    each(/(^|[^\w'’.])i(?=$|[\s,.;:!?)]|['’](?:m|ve|ll|d)\b)/g, (m) => {
+      const p = m.index + m[1].length;
+      if (s.slice(p, p + 3) === "i.e" || (m[1] === "(" && s[p + 1] === ")")) return;
+      add(p, p + 1, "I", "“I” is always a capital letter.");
+    });
+
+    // Capital letter at the start of a sentence
+    if (!listItem) {
+      const f = s.search(/\S/);
+      if (f >= 0 && /[a-z]/.test(s[f])) {
+        const w = (s.slice(f).match(/^[\w.-]+/) || [""])[0];
+        if (!/[A-Z]/.test(w) && !/^(e\.g|i\.e|etc|vs|http|www)/i.test(w) && !/\.\w/.test(w)) {
+          add(f, f + 1, s[f].toUpperCase(), "Start a sentence with a capital letter.");
+        }
+      }
+    }
+    each(/([.!?])(\s+)([a-z])/g, (m) => {
+      const before = s.slice(0, m.index + 1);
+      if (m[1] === "." && (ABBREV.test(before) || /(\.\.|\d)\.$/.test(before) || /\b[a-z]\.$/i.test(before))) return;
+      const p = m.index + m[1].length + m[2].length;
+      const w = (s.slice(p).match(/^[\w-]+/) || [""])[0];
+      if (/[A-Z]/.test(w)) return; // iPhone, eBay
+      add(p, p + 1, m[3].toUpperCase(), "Start a sentence with a capital letter.");
+    });
+
+    // Spacing
+    each(/(\S)( {2,})(?=\S)/g, (m) => add(m.index + 1, m.index + 1 + m[2].length, " ", "There's an extra space here."));
+    each(/(\w)( +)([,.;:!?])(?=\s|$)/g, (m) => add(m.index + 1, m.index + 1 + m[2].length, "", "Remove the space before “" + m[3] + "”."));
+    each(/(\w)( +)([,;])(?=[A-Za-z])/g, (m) => add(m.index + 1, m.index + 1 + m[2].length + 1, m[3] + " ", "The space goes after “" + m[3] + "”, not before."));
+    each(/([a-z]{2,})([,;])([A-Za-z]{2,})/g, (m) => {
+      const p = m.index + m[1].length;
+      add(p, p + 1, m[2] + " ", "Add a space after “" + m[2] + "”.");
+    });
+    each(/([A-Za-z][a-z]{2,})([.!?])([A-Z][a-z]+)/g, (m) => {
+      const p = m.index + m[1].length;
+      add(p, p + 1, m[2] + " ", "Add a space after “" + m[2] + "”.");
+    });
+    // Chinese punctuation inside English text
+    each(/([A-Za-z])\s*([，。；：！？])\s*(?=[A-Za-z])/g, (m) => {
+      const p = m.index + 1;
+      add(p, m.index + m[0].length, FULLWIDTH[m[2]] + " ", "Use English punctuation in English text.");
+    });
+
+    // Keep the first suggestion where two overlap.
+    out.sort((a, b) => a.start - b.start || b.end - a.end);
+    const clean = [];
+    let last = -1;
+    for (const x of out) {
+      if (x.start >= last) { clean.push(x); last = Math.max(x.end, x.start + 1); }
+    }
+    return clean;
+  }
+  const HAS_HIGHLIGHT = !!(window.CSS && CSS.highlights && window.Highlight);
+
   // ---------- storage ----------
-  const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m" };
+  const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m", docLayout: "pages", grammar: true };
   const TEXT_SIZES = { s: "Small", m: "Medium", l: "Large", xl: "Extra large" };
   let data = { version: 2, labels: [], notes: [], settings: Object.assign({}, DEFAULT_SETTINGS) };
   let loadFailed = false;
@@ -703,10 +938,18 @@
 
     // ---------- the doc page ----------
     function docPage(note) {
+      const full = !!opts.full;
+      const cleanups = [];
+      stopDocListeners = () => cleanups.forEach((f) => f());
+      const layout = () => note.layout || data.settings.docLayout || "pages";
+      let pageCount = 1;
+
       const status = el("span", { class: "sl-doc-status" });
-      function updateStatus() {
+      function updateStatus(extra) {
         const words = htmlToText(note.html).split(" ").filter(Boolean).length;
-        status.textContent = words + (words === 1 ? " word" : " words") + " · saved";
+        let t = words + (words === 1 ? " word" : " words");
+        if (layout() === "pages") t += " · " + pageCount + (pageCount === 1 ? " page" : " pages");
+        status.textContent = t + " · " + (extra || "saved");
       }
 
       const headRight = el("div", { class: "sl-group" });
@@ -718,6 +961,8 @@
       const body = el("div", {
         class: "sl-doc-body",
         contenteditable: "true",
+        spellcheck: "true",
+        lang: "en",
         role: "textbox",
         "aria-multiline": "true",
         "aria-label": "Doc text",
@@ -747,10 +992,13 @@
       }
       function run(cmd, value) {
         restoreSel();
-        try { document.execCommand("styleWithCSS", false, true); } catch (e) {}
+        // Colours need inline styles; everything else uses plain tags (<b>, <i>, <u>) so it is saved.
+        const css = cmd === "foreColor" || cmd === "hiliteColor";
+        try { document.execCommand("styleWithCSS", false, css); } catch (e) {}
         document.execCommand(cmd, false, value === undefined ? null : value);
         syncBody();
         refreshTools();
+        later();
       }
 
       // ----- formatting toolbar -----
@@ -769,16 +1017,17 @@
       }
       const sep = () => el("span", { class: "sl-tool-sep", "aria-hidden": "true" });
 
-      const blockSel = el("select", {
-        "aria-label": "Text style",
-        onmousedown: saveSel,
-        onchange: (e) => run("formatBlock", e.target.value),
-      },
-        el("option", { value: "P", text: "Normal text" }),
-        el("option", { value: "H1", text: "Title" }),
-        el("option", { value: "H2", text: "Heading" }),
-        el("option", { value: "H3", text: "Subheading" }),
-        el("option", { value: "BLOCKQUOTE", text: "Quote" }));
+      const BLOCKS = [
+        { value: "P", text: "Normal text", cls: "pv-p", hint: "Ctrl+Alt+0" },
+        { value: "H1", text: "Title", cls: "pv-h1", hint: "Ctrl+Alt+1" },
+        { value: "H2", text: "Heading", cls: "pv-h2", hint: "Ctrl+Alt+2" },
+        { value: "H3", text: "Subheading", cls: "pv-h3", hint: "Ctrl+Alt+3" },
+        { value: "BLOCKQUOTE", text: "Quote", cls: "pv-q", hint: "> space" },
+      ];
+      const blockDd = dropdown({
+        label: "Text style", options: BLOCKS, value: "P", keepFocus: true, onOpen: saveSel, cls: "sl-dd-block",
+        onPick: (v) => { run("formatBlock", v); buildOutline(); },
+      });
 
       const TEXT_COLORS = [["Ink", "#2f2e2b"], ["Brick", "#8a4f45"], ["Clay", "#a3684d"], ["Moss", "#4d6b55"], ["Slate", "#4f6a80"], ["Plum", "#6d5a80"]];
       const MARKS = [["Butter", "#ece8b0"], ["Lavender", "#ddd7f0"], ["Sage", "#d3dccb"], ["Rose", "#ecd6d1"], ["Mist", "#d2dbe2"], ["None", "transparent"]];
@@ -821,28 +1070,105 @@
         setTimeout(() => input.focus(), 0);
       }
 
+      function insertPageBreak() {
+        restoreSel();
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        // The break always sits between top-level blocks, never inside bold text or a list item.
+        const topBlock = () => {
+          let x = sel.anchorNode;
+          x = x && (x.nodeType === 1 ? x : x.parentElement);
+          while (x && x !== body && x.parentElement !== body) x = x.parentElement;
+          return x === body ? null : x;
+        };
+        const blk = topBlock();
+        const r = sel.getRangeAt(0);
+        let atEnd = true;
+        if (blk) {
+          const tail = document.createRange();
+          tail.selectNodeContents(blk);
+          tail.setStart(r.endContainer, r.endOffset);
+          atEnd = !tail.toString().trim();
+        }
+        const hr = el("hr", { class: "sl-pb" });
+        let next;
+        if (!blk) { next = el("p", null, el("br")); body.append(hr, next); }
+        else if (atEnd) { next = el("p", null, el("br")); blk.after(hr, next); }
+        else { document.execCommand("insertParagraph"); next = topBlock() || blk; next.before(hr); }
+        const c = document.createRange();
+        c.setStart(next, 0);
+        c.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(c);
+        syncBody();
+        later();
+      }
+      function printDoc() {
+        clearPushes();
+        window.print();
+        later();
+      }
+      function layoutMenu(anchor) {
+        openChoices(anchor, [
+          { heading: "PAGE LAYOUT" },
+          { text: "Pages", on: layout() === "pages", pick: () => { note.layout = "pages"; data.settings.docLayout = "pages"; touch(note); } },
+          { text: "Pageless (one long page)", on: layout() === "pageless", pick: () => { note.layout = "pageless"; data.settings.docLayout = "pageless"; touch(note); } },
+          { heading: "" },
+          { text: "Insert page break  ·  Ctrl+Enter", action: true, keep: true, pick: () => insertPageBreak() },
+        ]);
+      }
+
+      // ----- keyboard shortcuts list -----
+      const SHORTCUTS = [
+        ["Bold", "Ctrl+B"], ["Italic", "Ctrl+I"], ["Underline", "Ctrl+U"], ["Strikethrough", "Alt+Shift+5"],
+        ["Clear formatting", "Ctrl+\\"], ["Normal text", "Ctrl+Alt+0"], ["Title / Heading / Subheading", "Ctrl+Alt+1 / 2 / 3"],
+        ["Numbered list", "Ctrl+Shift+7"], ["Bulleted list", "Ctrl+Shift+8"], ["Indent / outdent list", "Tab / Shift+Tab"],
+        ["Align left / centre / right", "Ctrl+Shift+L / E / R"], ["Justify", "Ctrl+Shift+J"], ["Insert link", "Ctrl+K"],
+        ["Page break", "Ctrl+Enter"], ["Find", "Ctrl+F"], ["Find and replace", "Ctrl+H"], ["Undo / redo", "Ctrl+Z / Ctrl+Y"],
+        ["Print or save as PDF", "Ctrl+P"], ["This list", "Ctrl+/"],
+      ];
+      function showShortcuts(anchor) {
+        closeMenu();
+        menu = el("div", { class: "sl-menu sl-keys", role: "dialog", "aria-label": "Keyboard shortcuts" },
+          el("span", { class: "sl-choice-head", text: "KEYBOARD SHORTCUTS" }),
+          ...SHORTCUTS.map(([what, keysText]) => el("div", { class: "sl-key-row" },
+            el("span", { text: what }), el("kbd", { text: keysText }))));
+        root.append(menu);
+        placeMenu(anchor || keysBtn, 330, 560);
+      }
+
+      const linkBtn = tool(ICON.link, "Link", (b) => linkMenu(b), null, "Ctrl+K");
+      const keysBtn = tool(ICON.keys, "Keyboard shortcuts", (b) => showShortcuts(b), null, "Ctrl+/");
+      const grammarBtn = tool(ICON.grammar, "Grammar suggestions", () => toggleGrammar(), null);
+      const badge = el("span", { class: "sl-badge", hidden: true });
+      grammarBtn.append(badge);
+
       tools.append(
         tool(ICON.undo, "Undo", () => run("undo"), null, "Ctrl+Z"),
         tool(ICON.redo, "Redo", () => run("redo"), null, "Ctrl+Y"),
-        sep(), blockSel, sep(),
+        sep(), blockDd.el, sep(),
         tool(ICON.bold, "Bold", () => run("bold"), "bold", "Ctrl+B"),
         tool(ICON.italic, "Italic", () => run("italic"), "italic", "Ctrl+I"),
         tool(ICON.underline, "Underline", () => run("underline"), "underline", "Ctrl+U"),
-        tool(ICON.strike, "Strikethrough", () => run("strikeThrough"), "strikeThrough"),
+        tool(ICON.strike, "Strikethrough", () => run("strikeThrough"), "strikeThrough", "Alt+Shift+5"),
         tool(ICON.color, "Text colour", (b) => swatchMenu(b, "Text colour", TEXT_COLORS, "foreColor")),
         tool(ICON.mark, "Highlight", (b) => swatchMenu(b, "Highlight", MARKS, "hiliteColor")),
         sep(),
-        tool(ICON.left, "Align left", () => run("justifyLeft"), "justifyLeft"),
-        tool(ICON.center, "Align centre", () => run("justifyCenter"), "justifyCenter"),
-        tool(ICON.right, "Align right", () => run("justifyRight"), "justifyRight"),
+        tool(ICON.left, "Align left", () => run("justifyLeft"), "justifyLeft", "Ctrl+Shift+L"),
+        tool(ICON.center, "Align centre", () => run("justifyCenter"), "justifyCenter", "Ctrl+Shift+E"),
+        tool(ICON.right, "Align right", () => run("justifyRight"), "justifyRight", "Ctrl+Shift+R"),
         sep(),
-        tool(ICON.ul, "Bulleted list", () => run("insertUnorderedList"), "insertUnorderedList"),
-        tool(ICON.ol, "Numbered list", () => run("insertOrderedList"), "insertOrderedList"),
-        tool(ICON.link, "Link", (b) => linkMenu(b)),
+        tool(ICON.ul, "Bulleted list", () => run("insertUnorderedList"), "insertUnorderedList", "Ctrl+Shift+8"),
+        tool(ICON.ol, "Numbered list", () => run("insertOrderedList"), "insertOrderedList", "Ctrl+Shift+7"),
+        linkBtn,
         tool(ICON.hr, "Divider line", () => run("insertHorizontalRule")),
         sep(),
+        tool(ICON.pages, "Page layout: pages or pageless", (b) => layoutMenu(b)),
         tool(ICON.outline, "Show or hide outline", () => { outlineOpen = !outlineOpen; outline.hidden = !outlineOpen; buildOutline(); }),
-        tool(ICON.print, "Print or save as PDF", () => window.print()));
+        tool(ICON.find, "Find and replace", () => openFind(false), null, "Ctrl+F"),
+        grammarBtn,
+        tool(ICON.print, "Print or save as PDF", () => printDoc(), null, "Ctrl+P"),
+        keysBtn);
 
       function refreshTools() {
         if (document.activeElement !== body) return;
@@ -854,14 +1180,14 @@
         }
         try {
           const block = (document.queryCommandValue("formatBlock") || "p").toUpperCase();
-          blockSel.value = ["H1", "H2", "H3", "BLOCKQUOTE"].includes(block) ? block : "P";
+          blockDd.set(["H1", "H2", "H3", "BLOCKQUOTE"].includes(block) ? block : "P");
         } catch (e) {}
       }
       document.addEventListener("selectionchange", refreshTools);
-      stopDocListeners = () => document.removeEventListener("selectionchange", refreshTools);
+      cleanups.push(() => document.removeEventListener("selectionchange", refreshTools));
 
       // ----- outline built from the headings -----
-      let outlineOpen = !!opts.full && window.innerWidth > 1000;
+      let outlineOpen = full && window.innerWidth > 1000;
       const outline = el("nav", { class: "sl-outline", "aria-label": "Outline" });
       outline.hidden = !outlineOpen;
       function buildOutline() {
@@ -906,26 +1232,433 @@
         else if (rule === "ol") document.execCommand("insertOrderedList");
         else document.execCommand("formatBlock", false, rule);
         syncBody();
+        buildOutline();
       });
+
+      // ----- Google Docs keyboard shortcuts -----
+      const HEAD_KEYS = { Digit0: "P", Digit1: "H1", Digit2: "H2", Digit3: "H3", Numpad0: "P", Numpad1: "H1", Numpad2: "H2", Numpad3: "H3" };
+      function inList() {
+        const sel = window.getSelection();
+        const n = sel.anchorNode;
+        const elx = n && (n.nodeType === 1 ? n : n.parentElement);
+        return !!(elx && body.contains(elx) && elx.closest("li"));
+      }
+      function shortcut(e) {
+        const c = e.ctrlKey || e.metaKey;
+        const k = (e.key || "").toLowerCase();
+        const inText = body.contains(e.target);
+        let act = null;
+        // Anywhere on the doc page
+        if (c && !e.shiftKey && !e.altKey) {
+          if (k === "p") act = printDoc;
+          else if (k === "f") act = () => openFind(false);
+          else if (k === "h") act = () => openFind(true);
+          else if (k === "/") act = () => showShortcuts();
+          else if (k === "s") act = () => updateStatus("saved just now");
+        }
+        if (!act && inText) {
+          if (c && !e.shiftKey && !e.altKey) {
+            if (k === "b") act = () => run("bold");
+            else if (k === "i") act = () => run("italic");
+            else if (k === "u") act = () => run("underline");
+            else if (k === "k") act = () => linkMenu(linkBtn);
+            else if (k === "\\") act = () => run("removeFormat");
+            else if (k === "enter") act = insertPageBreak;
+            else if (k === "z") act = () => run("undo");
+            else if (k === "y") act = () => run("redo");
+          } else if (c && e.shiftKey && !e.altKey) {
+            if (e.code === "Digit7") act = () => run("insertOrderedList");
+            else if (e.code === "Digit8") act = () => run("insertUnorderedList");
+            else if (k === "x") act = () => run("strikeThrough");
+            else if (k === "l") act = () => run("justifyLeft");
+            else if (k === "e") act = () => run("justifyCenter");
+            else if (k === "r") act = () => run("justifyRight");
+            else if (k === "j") act = () => run("justifyFull");
+            else if (k === "z") act = () => run("redo");
+          } else if (c && e.altKey && !e.shiftKey && HEAD_KEYS[e.code]) {
+            act = () => { run("formatBlock", HEAD_KEYS[e.code]); buildOutline(); };
+          } else if (!c && e.altKey && e.shiftKey && e.code === "Digit5") {
+            act = () => run("strikeThrough");
+          } else if (!c && !e.altKey && e.key === "Tab" && inList()) {
+            act = () => run(e.shiftKey ? "outdent" : "indent");
+          }
+        }
+        if (act) {
+          e.preventDefault();
+          e.stopPropagation();
+          saveSel();
+          act();
+        }
+      }
+
+      // ----- text positions inside the doc (for find and grammar) -----
+      function textBlocks() {
+        const blocks = [];
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        let cur = null;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const b = n.parentElement.closest("p, div, h1, h2, h3, li, blockquote, pre");
+          const blk = b && b !== body && body.contains(b) ? b : body;
+          if (!cur || cur.el !== blk) { cur = { el: blk, text: "", nodes: [] }; blocks.push(cur); }
+          cur.nodes.push({ node: n, start: cur.text.length });
+          cur.text += n.textContent;
+        }
+        return blocks;
+      }
+      function locate(block, i, isEnd) {
+        for (const x of block.nodes) {
+          const len = x.node.textContent.length;
+          if (isEnd ? (i > x.start && i <= x.start + len) : (i >= x.start && i < x.start + len)) return [x.node, i - x.start];
+        }
+        const lastNode = block.nodes[block.nodes.length - 1].node;
+        return [lastNode, isEnd ? lastNode.textContent.length : Math.min(i, lastNode.textContent.length)];
+      }
+      function rangeFor(block, start, end) {
+        const r = document.createRange();
+        const [sn, so] = locate(block, start, false);
+        const [en, eo] = end > start ? locate(block, end, true) : [sn, so];
+        r.setStart(sn, so);
+        r.setEnd(en, eo);
+        return r;
+      }
+      function setHighlight(name, ranges) {
+        if (!HAS_HIGHLIGHT) return;
+        if (ranges && ranges.length) CSS.highlights.set(name, new Highlight(...ranges));
+        else CSS.highlights.delete(name);
+      }
+      cleanups.push(() => ["sl-grammar", "sl-grammar-now", "sl-find", "sl-find-now"].forEach((n) => setHighlight(n, null)));
+      function replaceRange(r, text) {
+        body.focus();
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        try { document.execCommand("styleWithCSS", false, false); } catch (e) {}
+        if (text) document.execCommand("insertText", false, text);
+        else document.execCommand("delete");
+      }
+      function scrollToRange(r) {
+        const box = r.getBoundingClientRect();
+        const sr = scroller.getBoundingClientRect();
+        if (box.top < sr.top + 40 || box.bottom > sr.bottom - 40) scroller.scrollTop += box.top - sr.top - sr.height / 3;
+      }
+
+      // ----- find and replace (Ctrl+F / Ctrl+H) -----
+      let matches = [];
+      let current = -1;
+      const findInput = el("input", { class: "sl-find-input", placeholder: "Find in doc", "aria-label": "Find in doc" });
+      const replInput = el("input", { class: "sl-find-input", placeholder: "Replace with", "aria-label": "Replace with" });
+      const findCount = el("span", { class: "sl-find-count", "aria-live": "polite" });
+      const replBox = el("div", { class: "sl-find-repl", hidden: true }, replInput,
+        el("button", { class: "sl-pill", onclick: () => replaceOne(), text: "Replace" }),
+        el("button", { class: "sl-pill", onclick: () => replaceAll(), text: "Replace all" }));
+      const findBar = el("div", { class: "sl-findbar", hidden: true, role: "search" },
+        el("div", { class: "sl-find-row" },
+          svg(ICON.find, 15), findInput, findCount,
+          el("button", { class: "sl-tool", "aria-label": "Previous match", title: "Previous (Shift+Enter)", onclick: () => step(-1) }, svg(ICON.up, 15)),
+          el("button", { class: "sl-tool", "aria-label": "Next match", title: "Next (Enter)", onclick: () => step(1) }, svg(ICON.chevron, 15)),
+          el("button", { class: "sl-pill", onclick: () => { replBox.hidden = !replBox.hidden; if (!replBox.hidden) replInput.focus(); }, text: "Replace…" }),
+          el("button", { class: "sl-tool", "aria-label": "Close find", title: "Close (Esc)", onclick: () => closeFind() }, svg(ICON.x, 15))),
+        replBox);
+      function openFind(withReplace) {
+        findBar.hidden = false;
+        if (withReplace) replBox.hidden = false;
+        const sel = window.getSelection();
+        if (sel.rangeCount && !sel.isCollapsed && body.contains(sel.anchorNode)) {
+          const t = sel.toString();
+          if (t.length < 80 && !t.includes("\n")) findInput.value = t;
+        }
+        findInput.focus();
+        findInput.select();
+        runFind(true);
+      }
+      function closeFind() {
+        findBar.hidden = true;
+        matches = [];
+        setHighlight("sl-find", null);
+        setHighlight("sl-find-now", null);
+        body.focus();
+      }
+      function runFind(jump) {
+        if (findBar.hidden) return;
+        const q = findInput.value;
+        matches = [];
+        if (q) {
+          const lq = q.toLowerCase();
+          for (const b of textBlocks()) {
+            const t = b.text.replace(/ /g, " ").toLowerCase();
+            for (let i = t.indexOf(lq); i >= 0; i = t.indexOf(lq, i + lq.length)) matches.push(rangeFor(b, i, i + lq.length));
+          }
+        }
+        if (current >= matches.length) current = matches.length - 1;
+        if (jump || current < 0) current = matches.length ? 0 : -1;
+        showFind(jump);
+      }
+      function showFind(scroll) {
+        setHighlight("sl-find", matches);
+        setHighlight("sl-find-now", current >= 0 ? [matches[current]] : null);
+        findCount.textContent = !findInput.value ? "" : matches.length ? (current + 1) + " of " + matches.length : "No results";
+        if (scroll && current >= 0) scrollToRange(matches[current]);
+      }
+      function step(d) {
+        if (!matches.length) return;
+        current = (current + d + matches.length) % matches.length;
+        showFind(true);
+      }
+      function replaceOne() {
+        if (current < 0 || !matches[current]) return;
+        replaceRange(matches[current], replInput.value);
+        syncBody();
+        runFind(false);
+        showFind(true);
+        replInput.focus();
+      }
+      function replaceAll() {
+        if (!matches.length) return;
+        const n = matches.length;
+        for (let i = matches.length - 1; i >= 0; i--) replaceRange(matches[i], replInput.value);
+        syncBody();
+        runFind(true);
+        updateStatus("replaced " + n);
+        replInput.focus();
+      }
+      findInput.addEventListener("input", () => runFind(true));
+      for (const inp of [findInput, replInput]) {
+        inp.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeFind(); }
+          else if (e.key === "Enter" && inp === findInput) { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+          else if (e.key === "Enter") { e.preventDefault(); replaceOne(); }
+        });
+      }
+
+      // ----- grammar suggestions -----
+      const ignored = new Set(Array.isArray(note.gIgnore) ? note.gIgnore : []);
+      const issueKey = (x) => x.orig + "→" + x.fix;
+      let issues = [];
+      let lastSig = null;
+      let grammarOpen = false;
+      const gList = el("div", { class: "sl-g-list" });
+      const gUnderline = el("input", {
+        type: "checkbox",
+        checked: data.settings.grammar !== false,
+        onchange: (e) => { data.settings.grammar = e.target.checked; save(); check(); },
+      });
+      const grammarPanel = el("aside", { class: "sl-grammar", hidden: true, "aria-label": "Grammar suggestions" },
+        el("div", { class: "sl-g-head" },
+          el("span", { class: "sl-choice-head", text: "SUGGESTIONS" }),
+          el("button", { class: "sl-tool", "aria-label": "Close suggestions", onclick: () => toggleGrammar(false) }, svg(ICON.x, 14))),
+        el("label", { class: "sl-g-opt" }, gUnderline, "Underline as I type"),
+        gList,
+        el("p", { class: "sl-g-note", text: "English grammar, spelling and punctuation rules. Works offline; nothing leaves your computer." }));
+      function toggleGrammar(force) {
+        grammarOpen = force === undefined ? !grammarOpen : force;
+        grammarPanel.hidden = !grammarOpen;
+        grammarBtn.classList.toggle("on", grammarOpen);
+        check();
+      }
+      function check() {
+        issues = [];
+        for (const b of textBlocks()) {
+          const isList = b.el.tagName === "LI";
+          for (const x of grammarCheck(b.text, isList)) {
+            if (ignored.has(issueKey(x))) continue;
+            x.range = rangeFor(b, x.start, x.end);
+            issues.push(x);
+          }
+        }
+        const show = data.settings.grammar !== false;
+        setHighlight("sl-grammar", show ? issues.map((x) => x.range) : null);
+        badge.hidden = !show || !issues.length;
+        badge.textContent = issues.length > 99 ? "99+" : String(issues.length);
+        // Only redraw the list when the suggestions actually changed.
+        const sig = issues.map((x) => x.start + ":" + x.orig + ">" + x.fix).join("|");
+        if (grammarOpen && (sig !== lastSig || !gList.childElementCount)) renderIssues();
+        lastSig = grammarOpen ? sig : null;
+      }
+      const showChars = (t) => (t === "" ? "(remove)" : t.trim() ? t : "␣".repeat(t.length));
+      function issueCard(x) {
+        return el("div", {
+          class: "sl-g-card",
+          onmouseenter: () => setHighlight("sl-grammar-now", [x.range]),
+          onmouseleave: () => setHighlight("sl-grammar-now", null),
+          onclick: (e) => { if (!e.target.closest("button")) scrollToRange(x.range); },
+        },
+          el("span", { class: "sl-g-msg", text: x.msg }),
+          el("div", { class: "sl-g-change" },
+            el("s", { text: showChars(x.orig) }), " → ", el("b", { text: showChars(x.fix) })),
+          el("div", { class: "sl-g-btns" },
+            el("button", { class: "sl-pill dark", onclick: () => accept(x), text: "Accept" }),
+            el("button", { class: "sl-pill", onclick: () => ignore(x), text: "Ignore" })));
+      }
+      function renderIssues() {
+        gList.textContent = "";
+        if (!issues.length) {
+          gList.append(el("div", { class: "sl-g-empty" },
+            el("strong", { text: "Looking good." }), el("span", { text: "No suggestions right now." })));
+          return;
+        }
+        gList.append(el("div", { class: "sl-g-top" },
+          el("span", { text: issues.length + (issues.length === 1 ? " suggestion" : " suggestions") }),
+          el("button", { class: "sl-pill", onclick: acceptAll, text: "Accept all" })));
+        issues.forEach((x) => gList.append(issueCard(x)));
+      }
+      function accept(x) {
+        closePop();
+        setHighlight("sl-grammar-now", null);
+        replaceRange(x.range, x.fix);
+        syncBody();
+        check();
+      }
+      function acceptAll() {
+        for (let i = issues.length - 1; i >= 0; i--) replaceRange(issues[i].range, issues[i].fix);
+        syncBody();
+        check();
+      }
+      function ignore(x) {
+        closePop();
+        ignored.add(issueKey(x));
+        note.gIgnore = Array.from(ignored).slice(-200);
+        touch(note);
+        check();
+      }
+      // Click an underlined word to see the suggestion right there.
+      let gpop = null;
+      function closePop() { if (gpop) gpop.remove(); gpop = null; }
+      cleanups.push(closePop);
+      function issueAtCaret() {
+        const sel = window.getSelection();
+        if (!sel.rangeCount || !sel.isCollapsed) return null;
+        const n = sel.anchorNode;
+        const o = sel.anchorOffset;
+        return issues.find((x) => {
+          try { return x.range.isPointInRange(n, o); } catch (e) { return false; }
+        }) || null;
+      }
+      function maybePop() {
+        closePop();
+        if (data.settings.grammar === false) return;
+        const x = issueAtCaret();
+        if (!x) return;
+        const box = x.range.getBoundingClientRect();
+        const r = root.getBoundingClientRect();
+        gpop = el("div", { class: "sl-gpop", role: "dialog", "aria-label": "Suggestion" },
+          el("span", { class: "sl-g-msg", text: x.msg }),
+          el("div", { class: "sl-g-btns" },
+            el("button", { class: "sl-pill dark", onmousedown: (e) => e.preventDefault(), onclick: () => accept(x), text: x.fix === "" ? "Remove" : x.fix.trim() ? x.fix : "Fix spacing" }),
+            el("button", { class: "sl-pill", onmousedown: (e) => e.preventDefault(), onclick: () => ignore(x), text: "Ignore" })));
+        gpop.style.left = Math.max(8, Math.min(box.left - r.left, r.width - 268)) + "px";
+        gpop.style.top = (box.bottom - r.top + 8) + "px";
+        root.append(gpop);
+      }
+
+      // ----- pages: split the doc into separate sheets, like Google Docs -----
+      const sheets = el("div", { class: "sl-sheets", "aria-hidden": "true" });
+      const GAP = 24;
+      function clearPushes() {
+        body.querySelectorAll("[data-slpush]").forEach((n) => {
+          n.style.paddingTop = "";
+          n.style.marginTop = "";
+          n.removeAttribute("data-slpush");
+          if (!n.getAttribute("style")) n.removeAttribute("style");
+        });
+      }
+      function units() {
+        const out = [];
+        for (const c of body.children) {
+          if ((c.tagName === "UL" || c.tagName === "OL") && c.children.length) out.push(...Array.from(c.children));
+          else out.push(c);
+        }
+        return out;
+      }
+      function paginate() {
+        const paged = layout() === "pages";
+        paper.classList.toggle("paged", paged);
+        clearPushes();
+        if (!paged) {
+          sheets.textContent = "";
+          paper.style.minHeight = "";
+          paper.style.paddingTop = paper.style.paddingBottom = "";
+          pageCount = 1;
+          updateStatus();
+          return;
+        }
+        const w = paper.offsetWidth;
+        if (!w) return;
+        const pageH = Math.round((w * 11) / 8.5);
+        const margin = Math.round(w * (full ? 0.09 : 0.07));
+        const stride = pageH + GAP;
+        paper.style.paddingTop = paper.style.paddingBottom = margin + "px";
+        const top0 = () => paper.getBoundingClientRect().top;
+        let forceNext = false;
+        for (const u of units()) {
+          if (u.tagName === "HR" && u.classList.contains("sl-pb")) { forceNext = true; continue; }
+          const r = u.getBoundingClientRect();
+          if (!r.height && !forceNext) continue;
+          const base = top0();
+          const t = r.top - base;
+          const b = r.bottom - base;
+          const k = Math.floor(t / stride);
+          const end = k * stride + pageH - margin;
+          let target = null;
+          if (forceNext) { if (t > k * stride + margin + 1) target = (k + 1) * stride + margin; }
+          else if (t >= end || (b > end && r.height < pageH - 2 * margin)) target = (k + 1) * stride + margin;
+          forceNext = false;
+          if (target === null) continue;
+          u.setAttribute("data-slpush", "");
+          if (u.tagName === "BLOCKQUOTE" || u.tagName === "HR") {
+            // These have a background, so push with margin instead of padding.
+            const prev = u.previousElementSibling;
+            const cur = parseFloat(getComputedStyle(u).marginTop) || 0;
+            const gap = prev ? Math.max(cur, t - (prev.getBoundingClientRect().bottom - base)) : cur;
+            u.style.marginTop = gap + (target - t) + "px";
+          } else {
+            const cur = parseFloat(getComputedStyle(u).paddingTop) || 0;
+            u.style.paddingTop = cur + (target - t) + "px";
+          }
+        }
+        const bottom = body.getBoundingClientRect().bottom - top0();
+        pageCount = Math.max(1, Math.floor(Math.max(0, bottom - 1) / stride) + 1);
+        paper.style.minHeight = pageCount * stride - GAP + "px";
+        sheets.textContent = "";
+        for (let i = 0; i < pageCount; i++) {
+          sheets.append(el("div", { class: "sl-sheet", style: "top:" + i * stride + "px; height:" + pageH + "px" },
+            el("span", { class: "sl-sheet-no", text: String(i + 1) })));
+        }
+        updateStatus();
+      }
+
+      // ----- run the slower jobs shortly after typing -----
+      let frame = 0;
+      let slow = 0;
+      function later() {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => { paginate(); runFind(false); });
+        clearTimeout(slow);
+        slow = setTimeout(check, 450);
+      }
+      cleanups.push(() => { cancelAnimationFrame(frame); clearTimeout(slow); });
 
       body.addEventListener("focus", () => {
         // New lines become proper paragraphs.
         try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
       });
-      body.addEventListener("input", () => { syncBody(); buildOutline(); });
+      body.addEventListener("input", () => { syncBody(); buildOutline(); closePop(); later(); });
       body.addEventListener("paste", (e) => {
         // Keep simple formatting from the clipboard, drop everything else.
         e.preventDefault();
         const html = e.clipboardData.getData("text/html");
+        try { document.execCommand("styleWithCSS", false, false); } catch (err) {}
         if (html) document.execCommand("insertHTML", false, cleanHtml(html));
         else document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
         syncBody();
         buildOutline();
+        later();
       });
       body.addEventListener("click", (e) => {
         // Never let a link replace the app page.
         if (e.target.closest("a")) e.preventDefault();
+        setTimeout(maybePop, 0);
       });
+      body.addEventListener("keyup", (e) => { if (e.key.startsWith("Arrow")) maybePop(); });
 
       const title = el("input", {
         class: "sl-doc-title",
@@ -942,11 +1675,40 @@
       const due = dueInfo(note.due);
       if (due) meta.append(el("span", { class: "sl-chip " + due.cls, text: due.text }));
 
-      const paper = el("div", { class: "sl-paper" }, meta, title, body);
-      const page = el("div", { class: "sl-docpage" }, head, tools,
-        el("div", { class: "sl-doc-main" }, outline, el("div", { class: "sl-doc-scroll" }, paper)));
+      const paper = el("div", { class: "sl-paper" }, sheets, meta, title, body);
+      // Clicking the empty part of a page puts the cursor at the end of the text.
+      paper.addEventListener("mousedown", (e) => {
+        if (e.target !== paper) return;
+        e.preventDefault();
+        body.focus();
+        const r = document.createRange();
+        r.selectNodeContents(body);
+        r.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      });
+      const scroller = el("div", { class: "sl-doc-scroll" }, paper);
+      scroller.addEventListener("scroll", closePop);
+      const page = el("div", { class: "sl-docpage", onkeydown: shortcut }, head, tools, findBar,
+        el("div", { class: "sl-doc-main" }, outline, scroller, grammarPanel));
+
+      // Re-split pages when the window is resized, and around printing.
+      let lastW = 0;
+      const ro = new ResizeObserver(() => {
+        const w = paper.offsetWidth;
+        if (w && w !== lastW) { lastW = w; later(); }
+      });
+      ro.observe(paper);
+      const before = () => clearPushes();
+      const after = () => later();
+      window.addEventListener("beforeprint", before);
+      window.addEventListener("afterprint", after);
+      cleanups.push(() => { ro.disconnect(); window.removeEventListener("beforeprint", before); window.removeEventListener("afterprint", after); });
+
       updateStatus();
       buildOutline();
+      later();
       return { page, title, body };
     }
 
@@ -1018,6 +1780,15 @@
           menu.append(item.heading ? el("span", { class: "sl-choice-head", text: item.heading }) : el("hr", { class: "sl-choice-line" }));
           continue;
         }
+        if (item.action) {
+          menu.append(el("button", {
+            class: "sl-choice sl-action",
+            role: "menuitem",
+            onmousedown: (e) => e.preventDefault(),
+            onclick: () => { closeMenu(); item.pick(); if (!item.keep) render(); },
+          }, item.text));
+          continue;
+        }
         menu.append(el("button", {
           class: "sl-choice" + (item.on ? " on" : ""),
           role: item.check ? "menuitemcheckbox" : "menuitemradio",
@@ -1040,21 +1811,25 @@
           onclick: () => { note.color = col; touch(note); closeMenu(); render(); },
         }));
       }
-      const labelSel = el("select", { onchange: (e) => { note.label = e.target.value; touch(note); closeMenu(); render(); } },
-        el("option", { value: "", text: "No label" }));
-      for (const l of data.labels) labelSel.append(el("option", { value: l.id, text: l.name || "Untitled" }));
-      labelSel.value = note.label || "";
-
-      const impSel = el("select", { onchange: (e) => { note.importance = e.target.value; touch(note); closeMenu(); render(); } });
-      for (const [k, v] of Object.entries(IMPORTANCE)) impSel.append(el("option", { value: k, text: v }));
-      impSel.value = note.importance || "low";
+      const labelDd = dropdown({
+        label: "Label",
+        options: [{ value: "", text: "No label" }].concat(data.labels.map((l) => ({ value: l.id, text: l.name || "Untitled" }))),
+        value: note.label || "",
+        onPick: (v) => { note.label = v; touch(note); closeMenu(); render(); },
+      });
+      const impDd = dropdown({
+        label: "Importance",
+        options: Object.entries(IMPORTANCE).map(([k, v]) => ({ value: k, text: v })),
+        value: note.importance || "low",
+        onPick: (v) => { note.importance = v; touch(note); closeMenu(); render(); },
+      });
 
       const dueInput = el("input", { type: "date", value: note.due || "", onchange: (e) => { note.due = e.target.value; touch(note); render(); } });
 
       menu = el("div", { class: "sl-menu", role: "dialog", "aria-label": "Note options" },
         el("label", null, "COLOUR", swatches),
-        el("label", null, "LABEL", labelSel),
-        el("label", null, "IMPORTANCE", impSel),
+        el("div", { class: "sl-field" }, "LABEL", labelDd.el),
+        el("div", { class: "sl-field" }, "IMPORTANCE", impDd.el),
         el("label", null, "DUE DATE", dueInput),
         el("div", { class: "sl-row" },
           el("button", { onclick: () => { note.due = ""; touch(note); closeMenu(); render(); }, text: "Clear date" }),
@@ -1201,5 +1976,5 @@
     return { refresh, counts, openDoc };
   }
 
-  window.StillLifeNotes = { mount };
+  window.StillLifeNotes = { mount, grammarCheck };
 })();
