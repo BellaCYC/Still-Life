@@ -81,6 +81,9 @@
     keys: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
     chevron: '<path d="M6 9l6 6 6-6"/>',
     image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8.5 8.5"/>',
+    lasso: '<path d="M12 4c5 0 9 2.5 9 6s-4 6-9 6-9-2.5-9-6 4-6 9-6z" stroke-dasharray="3 2.5"/><path d="M6 15c-1 2 0 4 2 5"/>',
+    sticker: '<path d="M14 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h8l7-7V6a3 3 0 0 0-3-3z"/><path d="M14 21v-4a3 3 0 0 1 3-3h4"/>',
+    dropper: '<path d="M14.5 5.5l4 4M17 3a2.1 2.1 0 0 1 3 3l-2 2-3-3zM15 7L5 17l-1 3 3-1L17 9"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     draw: '<path d="M3 21l1-4L16 5a2.4 2.4 0 0 1 3.5 3.5L7.5 20z"/><path d="M14 7l3 3"/>',
     eraser: '<path d="M8 20h12M5.5 16.5l9-9a2 2 0 0 1 3 0l3 3a2 2 0 0 1 0 3L14 20H8z"/><path d="M11 11l5.5 5.5"/>',
@@ -526,6 +529,62 @@
   const ARROWS = [["<=>", "⇔"], ["<->", "↔"], ["←>", "↔"], ["≤>", "⇔"], ["->", "→"], ["<-", "←"], ["=>", "⇒"], ["<=", "≤"],
     [">=", "≥"], ["!=", "≠"], ["+-", "±"], ["~=", "≈"], ["(c)", "©"], ["(tm)", "™"]];
 
+
+  // ---------- colours ----------
+  const PEN_PALETTE = [
+    ["Ink", "#2f2e2b"], ["Brick", "#8a4f45"], ["Moss", "#4d6b55"], ["Slate", "#4f6a80"], ["Plum", "#6d5a80"], ["Clay", "#a3684d"], ["Black", "#111111"],
+    ["Graphite", "#5a5650"], ["Stone", "#8c867c"], ["Fog", "#b9b2a6"], ["White", "#ffffff"], ["Caramel", "#b98b5e"], ["Olive", "#8a8148"], ["Sage", "#6f8a6a"],
+    ["Teal grey", "#5e7d7a"], ["Dusty blue", "#5d6f9a"], ["Mauve", "#8a5a73"], ["Dusty rose", "#a86f7a"], ["Terracotta", "#b5654a"], ["Mustard", "#b8963a"], ["Forest", "#3d5a45"],
+    ["Red", "#d64545"], ["Orange", "#e8833a"], ["Yellow", "#e5b82a"], ["Green", "#3f9b5b"], ["Teal", "#2f8f9d"], ["Blue", "#2f6fd6"], ["Navy", "#253c78"],
+    ["Violet", "#6b4fd6"], ["Purple", "#8e44ad"], ["Pink", "#d1569b"], ["Coral", "#e86a5c"], ["Brown", "#6e4b36"], ["Lime", "#7cb342"], ["Sky", "#3fa7e0"],
+  ];
+  const HL_PALETTE = [
+    ["Butter", "#f4e3a1"], ["Peach", "#f6cf9c"], ["Coral", "#f2b8b0"], ["Rose", "#ecd6d1"], ["Lavender", "#ddd7f0"], ["Sky", "#c9d8f0"], ["Mint", "#c7e3dc"],
+    ["Sage", "#d3dccb"], ["Mist", "#d2dbe2"], ["Clay", "#e4cdb4"], ["Lilac", "#e7c6dc"], ["Oat", "#ece2cf"], ["Celadon", "#dbe5dc"], ["Pale gold", "#efe3b8"],
+    ["Neon yellow", "#fff176"], ["Neon green", "#b9f6ca"], ["Neon pink", "#ffc1e3"], ["Neon blue", "#b3e5fc"], ["Neon orange", "#ffcc80"], ["Neon purple", "#e1bee7"], ["Grey", "#e0ddd6"],
+  ];
+  function colorName(v) {
+    const hit = PEN_PALETTE.concat(HL_PALETTE).find((x) => x[1].toLowerCase() === String(v).toLowerCase());
+    return hit ? hit[0] : String(v).toUpperCase();
+  }
+  // The eyedropper: pick any colour anywhere on the screen.
+  function pickScreenColor(done, fail) {
+    if (!window.EyeDropper) { if (fail) fail(); return; }
+    new window.EyeDropper().open().then((r) => r && r.sRGBHex && done(r.sRGBHex)).catch(() => {});
+  }
+  function addCustomColor(v) {
+    data.settings.customColors = [v].concat((data.settings.customColors || []).filter((x) => x !== v)).slice(0, 14);
+    save();
+  }
+
+  // ---------- stickers (drawn here, so they work offline) ----------
+  const STK = (body) => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><g stroke-linejoin="round" stroke-linecap="round">' + body + "</g></svg>";
+  const STICKERS = [
+    ["Saturn", STK('<ellipse cx="60" cy="62" rx="54" ry="18" fill="none" stroke="#fff" stroke-width="16" transform="rotate(-18 60 62)"/><circle cx="60" cy="60" r="30" fill="#dccdb5" stroke="#fff" stroke-width="8"/><path d="M36 52c14 6 34 6 48-2" stroke="#c9a88f" stroke-width="5" fill="none"/><ellipse cx="60" cy="62" rx="54" ry="18" fill="none" stroke="#a9b7c2" stroke-width="6" transform="rotate(-18 60 62)"/>')],
+    ["Star", STK('<path d="M60 10l14 30 33 4-24 22 6 33-29-16-29 16 6-33-24-22 33-4z" fill="#e5cf8f" stroke="#fff" stroke-width="8"/>')],
+    ["Heart", STK('<path d="M60 102C20 76 10 54 18 36c8-18 32-20 42-2 10-18 34-16 42 2 8 18-2 40-42 66z" fill="#d3b5af" stroke="#fff" stroke-width="8"/>')],
+    ["Leaf", STK('<path d="M24 96C20 50 50 18 100 18c2 50-30 80-76 78z" fill="#b7c2ae" stroke="#fff" stroke-width="8"/><path d="M28 92c20-22 40-40 62-62" stroke="#8a9a80" stroke-width="5" fill="none"/>')],
+    ["Flower", STK('<g fill="#e7c6dc" stroke="#fff" stroke-width="6"><circle cx="60" cy="32" r="20"/><circle cx="88" cy="56" r="20"/><circle cx="76" cy="88" r="20"/><circle cx="44" cy="88" r="20"/><circle cx="32" cy="56" r="20"/></g><circle cx="60" cy="64" r="14" fill="#e5cf8f" stroke="#fff" stroke-width="5"/>')],
+    ["Sun", STK('<g stroke="#fff" stroke-width="16"><path d="M60 8v18M60 94v18M8 60h18M94 60h18M23 23l13 13M84 84l13 13M97 23L84 36M36 84L23 97"/></g><g stroke="#e8b86a" stroke-width="7"><path d="M60 8v18M60 94v18M8 60h18M94 60h18M23 23l13 13M84 84l13 13M97 23L84 36M36 84L23 97"/></g><circle cx="60" cy="60" r="26" fill="#f2d48f" stroke="#fff" stroke-width="7"/>')],
+    ["Moon", STK('<path d="M78 14a46 46 0 1 0 28 66A38 38 0 0 1 78 14z" fill="#bdb3c4" stroke="#fff" stroke-width="8"/>')],
+    ["Cloud", STK('<path d="M30 92a22 22 0 0 1 2-44 30 30 0 0 1 56-6 22 22 0 0 1 4 50z" fill="#d2dbe2" stroke="#fff" stroke-width="8"/>')],
+    ["Done!", STK('<circle cx="60" cy="60" r="48" fill="#b7c2ae" stroke="#fff" stroke-width="8"/><path d="M36 62l16 16 32-34" stroke="#fff" stroke-width="12" fill="none"/>')],
+    ["Good job", STK('<path d="M20 34h80l-8 26 8 26H20l8-26z" fill="#c9a88f" stroke="#fff" stroke-width="7"/><text x="60" y="68" font-family="Georgia, serif" font-style="italic" font-size="20" text-anchor="middle" fill="#fff">Good job</text>')],
+    ["Coffee", STK('<path d="M26 40h56v34a24 24 0 0 1-24 24h-8a24 24 0 0 1-24-24z" fill="#c9a88f" stroke="#fff" stroke-width="8"/><path d="M82 50h8a12 12 0 0 1 0 24h-8" fill="none" stroke="#fff" stroke-width="12"/><path d="M82 50h8a12 12 0 0 1 0 24h-8" fill="none" stroke="#c9a88f" stroke-width="5"/><path d="M44 16c-4 6 4 10 0 16M58 16c-4 6 4 10 0 16" stroke="#a9b7c2" stroke-width="5" fill="none"/>')],
+    ["Book", STK('<path d="M14 30c18-6 32-4 46 6 14-10 28-12 46-6v62c-18-6-32-4-46 6-14-10-28-12-46-6z" fill="#a9b7c2" stroke="#fff" stroke-width="8"/><path d="M60 36v62" stroke="#fff" stroke-width="5"/>')],
+    ["Idea", STK('<path d="M60 14a32 32 0 0 0-18 58v12h36V72a32 32 0 0 0-18-58z" fill="#f2d48f" stroke="#fff" stroke-width="8"/><path d="M46 96h28M50 106h20" stroke="#fff" stroke-width="10"/><path d="M46 96h28M50 106h20" stroke="#8c867c" stroke-width="5"/>')],
+    ["Music", STK('<path d="M46 86V30l46-10v54" fill="none" stroke="#fff" stroke-width="14"/><path d="M46 86V30l46-10v54" fill="none" stroke="#6d5a80" stroke-width="6"/><circle cx="36" cy="88" r="13" fill="#bdb3c4" stroke="#fff" stroke-width="6"/><circle cx="82" cy="76" r="13" fill="#bdb3c4" stroke="#fff" stroke-width="6"/>')],
+    ["Important", STK('<path d="M60 12l50 88H10z" fill="#d3b5af" stroke="#fff" stroke-width="8"/><path d="M60 46v24" stroke="#fff" stroke-width="10"/><circle cx="60" cy="84" r="5" fill="#fff"/>')],
+    ["Pin", STK('<circle cx="60" cy="42" r="26" fill="#c4cfc6" stroke="#fff" stroke-width="8"/><path d="M60 68v40" stroke="#fff" stroke-width="12"/><path d="M60 68v40" stroke="#8c867c" stroke-width="5"/>')],
+  ];
+
+  // ---------- paper and covers ----------
+  const PAPER_STYLES = [["plain", "Plain"], ["lined", "Lined"], ["grid", "Grid"], ["dots", "Dots"], ["cornell", "Cornell"]];
+  const PAPER_COLORS = [["Cream", "#fffdf9"], ["White", "#ffffff"], ["Ivory", "#fbf5e6"], ["Sage", "#eff2ea"], ["Mist", "#edf1f4"], ["Rose", "#f7eeec"], ["Lavender", "#f2eff8"], ["Oat", "#f4ede1"]];
+  const COVERS = [
+    ["sage", "Sage linen", "#b7c2ae"], ["mist", "Mist", "#a9b7c2"], ["rose", "Rose", "#d3b5af"], ["oat", "Oat", "#dccdb5"],
+    ["lilac", "Lilac", "#bdb3c4"], ["clay", "Clay", "#c9a88f"], ["plum", "Deep plum", "#6f5a8e"], ["night", "Night", "#3c4656"],
+  ];
   const HAS_HIGHLIGHT = !!(window.CSS && CSS.highlights && window.Highlight);
 
 
@@ -539,7 +598,7 @@
     return note.versions;
   }
   function sameContent(a, b) {
-    return (a.title || "") === (b.title || "") && (a.html || "") === (b.html || "") && JSON.stringify(a.ink || []) === JSON.stringify(b.ink || []);
+    return (a.title || "") === (b.title || "") && (a.html || "") === (b.html || "") && JSON.stringify(a.ink || []) === JSON.stringify(b.ink || []) && JSON.stringify(a.stickers || []) === JSON.stringify(b.stickers || []);
   }
   // Keeps a copy of the doc as it is now, so it can be brought back later.
   function pushVersion(note, snap, force) {
@@ -559,7 +618,7 @@
     }
     return true;
   }
-  const snapOf = (note) => ({ t: now(), device: deviceName, title: note.title || "", html: note.html || "", ink: note.ink || [] });
+  const snapOf = (note) => ({ t: now(), device: deviceName, title: note.title || "", html: note.html || "", ink: note.ink || [], stickers: note.stickers || [] });
   function whenText(t) {
     const d = new Date(t);
     const today = new Date();
@@ -732,7 +791,11 @@
         resolved: false,
       };
       if (type === "agenda") note.items = [];
-      else note.html = "";
+      else {
+        note.html = "";
+        if (data.settings.paperStyle) note.paperStyle = data.settings.paperStyle;
+        if (data.settings.paperColor) note.paperColor = data.settings.paperColor;
+      }
       data.notes.unshift(note);
       view.archive = false;
       if (type === "doc") {
@@ -939,7 +1002,17 @@
       if (!note.resolved) headButtons(note, head);
       c.append(head);
       const text = htmlToText(note.html);
-      c.append(el("p", { class: "sl-preview", text: text || "Empty doc. Click to start writing." }));
+      const cover = COVERS.find((x) => x[0] === note.cover);
+      if (cover) {
+        // A notebook cover, like GoodNotes.
+        c.classList.add("has-cover");
+        c.append(el("div", { class: "sl-cover cv-" + cover[0], style: "--cv:" + cover[2] },
+          el("span", { class: "sl-cover-spine", "aria-hidden": "true" }),
+          el("span", { class: "sl-cover-planet", "aria-hidden": "true" }),
+          el("span", { class: "sl-cover-label", text: note.title || "Untitled" })));
+      } else {
+        c.append(el("p", { class: "sl-preview", text: text || "Empty doc. Click to start writing." }));
+      }
       if (note.resolved) {
         c.append(el("div", { class: "sl-archive-actions" },
           el("button", { onclick: (e) => { e.stopPropagation(); restore(note); }, text: "Restore" }),
@@ -1256,6 +1329,43 @@
 
       const TEXT_COLORS = [["Ink", "#2f2e2b"], ["Brick", "#8a4f45"], ["Clay", "#a3684d"], ["Moss", "#4d6b55"], ["Slate", "#4f6a80"], ["Plum", "#6d5a80"]];
       const MARKS = [["Butter", "#ece8b0"], ["Lavender", "#ddd7f0"], ["Sage", "#d3dccb"], ["Rose", "#ecd6d1"], ["Mist", "#d2dbe2"], ["None", "transparent"]];
+      // A full colour picker: palette, your own colours, any custom colour, and the eyedropper.
+      function colorPicker(anchor, o) {
+        closeMenu();
+        const keep = (e) => e.preventDefault();
+        const pick = (v) => { closeMenu(); o.onPick(v); };
+        const cur = String(o.current || "").toLowerCase();
+        const swatch = (name, value) => el("button", {
+          class: "sl-swatch" + (cur === value.toLowerCase() ? " on" : ""),
+          style: "background:" + value, title: name, "aria-label": name,
+          onmousedown: keep, onclick: () => pick(value),
+        });
+        const grid = el("div", { class: "sl-palette" });
+        for (const [name, value] of o.colors) grid.append(swatch(name, value));
+        if (o.none) grid.append(el("button", { class: "sl-swatch none", title: "No highlight", "aria-label": "No highlight", onmousedown: keep, onclick: () => pick("transparent") }));
+        const mine = data.settings.customColors || [];
+        const customs = el("div", { class: "sl-palette" });
+        for (const v of mine) customs.append(swatch(v.toUpperCase(), v));
+        const input = el("input", {
+          type: "color", class: "sl-color-input", "aria-label": "Choose any colour",
+          value: /^#[0-9a-f]{6}$/i.test(o.current || "") ? o.current : "#6f8a6a",
+          onchange: (e) => { addCustomColor(e.target.value); pick(e.target.value); },
+        });
+        const note2 = el("span", { class: "sl-g-note", hidden: true, text: "The eyedropper isn't available on this computer; use Custom instead." });
+        menu = el("div", { class: "sl-menu sl-color-menu wide", role: "dialog", "aria-label": o.title },
+          el("span", { class: "sl-choice-head", text: o.title.toUpperCase() }), grid,
+          el("span", { class: "sl-choice-head", text: "YOUR COLOURS" }),
+          mine.length ? customs : el("span", { class: "sl-g-note", text: "Colours you pick with Custom or the eyedropper are kept here." }),
+          el("div", { class: "sl-row" },
+            el("label", { class: "sl-pill sl-custom", title: "Choose any colour" }, el("span", { class: "sl-rainbow", "aria-hidden": "true" }), "Custom", input),
+            el("button", {
+              class: "sl-pill", title: "Pick a colour from anywhere on the screen", onmousedown: keep,
+              onclick: () => pickScreenColor((v) => { addCustomColor(v); pick(v); }, () => { note2.hidden = false; }),
+            }, svg(ICON.dropper, 14), "Eyedropper")),
+          note2);
+        root.append(menu);
+        placeMenu(anchor, 300, 340);
+      }
       function swatchMenu(anchor, title, colors, cmd) {
         closeMenu();
         menu = el("div", { class: "sl-menu sl-color-menu", role: "dialog", "aria-label": title },
@@ -1333,14 +1443,42 @@
         window.print();
         later();
       }
+      function applyPaper() {
+        paper.style.setProperty("--paper-bg", note.paperColor || "#fffdf9");
+        for (const [k] of PAPER_STYLES) paper.classList.toggle("pp-" + k, (note.paperStyle || "plain") === k);
+      }
       function layoutMenu(anchor) {
-        openChoices(anchor, [
-          { heading: "PAGE LAYOUT" },
-          { text: "Pages", on: layout() === "pages", pick: () => { note.layout = "pages"; data.settings.docLayout = "pages"; touch(note); } },
-          { text: "Pageless (one long page)", on: layout() === "pageless", pick: () => { note.layout = "pageless"; data.settings.docLayout = "pageless"; touch(note); } },
-          { heading: "" },
-          { text: "Insert page break  ·  Ctrl+Enter", action: true, keep: true, pick: () => insertPageBreak() },
-        ]);
+        closeMenu();
+        const opt = (on, label, pick) => el("button", {
+          class: "sl-choice" + (on ? " on" : ""), role: "menuitemradio", "aria-checked": on ? "true" : "false", onclick: pick,
+        }, el("span", { class: "sl-radio", "aria-hidden": "true" }), label);
+        const tiles = el("div", { class: "sl-paper-tiles" });
+        for (const [k, name] of PAPER_STYLES) {
+          tiles.append(el("button", {
+            class: "sl-paper-tile pp-" + k + ((note.paperStyle || "plain") === k ? " on" : ""), title: name, "aria-label": name + " paper",
+            style: "--paper-bg:" + (note.paperColor || "#fffdf9"),
+            onclick: () => { note.paperStyle = k; data.settings.paperStyle = k; touch(note); applyPaper(); layoutMenu(anchor); },
+          }, el("span", { text: name })));
+        }
+        const colors = el("div", { class: "sl-palette" });
+        for (const [name, v] of PAPER_COLORS) {
+          colors.append(el("button", {
+            class: "sl-swatch" + ((note.paperColor || "#fffdf9") === v ? " on" : ""), style: "background:" + v, title: name, "aria-label": name + " paper",
+            onclick: () => { note.paperColor = v; data.settings.paperColor = v; touch(note); applyPaper(); layoutMenu(anchor); },
+          }));
+        }
+        menu = el("div", { class: "sl-menu sl-choices sl-page-setup", role: "dialog", "aria-label": "Page setup" },
+          el("span", { class: "sl-choice-head", text: "PAGE LAYOUT" }),
+          opt(layout() === "pages", "Pages", () => { note.layout = "pages"; data.settings.docLayout = "pages"; touch(note); closeMenu(); render(); }),
+          opt(layout() === "pageless", "Pageless (one long page)", () => { note.layout = "pageless"; data.settings.docLayout = "pageless"; touch(note); closeMenu(); render(); }),
+          el("span", { class: "sl-choice-head", text: "PAPER" }), tiles,
+          el("span", { class: "sl-choice-head", text: "PAPER COLOUR" }), colors,
+          el("hr", { class: "sl-choice-line" }),
+          el("button", { class: "sl-choice sl-action", onmousedown: (e) => e.preventDefault(), onclick: () => { closeMenu(); insertPageBreak(); } }, "Insert page break  \u00B7  Ctrl+Enter"),
+          el("button", { class: "sl-choice sl-action", onclick: () => { if (layout() === "pages") note.extraPages = (note.extraPages || 0) + 1; else note.extraSpace = (note.extraSpace || 0) + 600; touch(note); closeMenu(); later(); } }, "Add a blank page at the end"),
+          (note.extraPages || note.extraSpace) ? el("button", { class: "sl-choice sl-action", onclick: () => { note.extraPages = 0; note.extraSpace = 0; touch(note); closeMenu(); later(); } }, "Remove added blank pages") : null);
+        root.append(menu);
+        placeMenu(anchor, 300, 520);
       }
 
       // ----- keyboard shortcuts list -----
@@ -1383,8 +1521,8 @@
         tool(ICON.strike, "Strikethrough", () => run("strikeThrough"), "strikeThrough", "Alt+Shift+5"),
         tool(ICON.sup, "Superscript", () => run("superscript"), "superscript", "Ctrl+."),
         tool(ICON.sub, "Subscript", () => run("subscript"), "subscript", "Ctrl+,"),
-        tool(ICON.color, "Text colour", (b) => swatchMenu(b, "Text colour", TEXT_COLORS, "foreColor")),
-        tool(ICON.mark, "Highlight", (b) => swatchMenu(b, "Highlight", MARKS, "hiliteColor")),
+        tool(ICON.color, "Text colour", (b) => colorPicker(b, { title: "Text colour", colors: PEN_PALETTE, onPick: (v) => run("foreColor", v) })),
+        tool(ICON.mark, "Highlight", (b) => colorPicker(b, { title: "Highlight", colors: HL_PALETTE, none: true, onPick: (v) => run("hiliteColor", v) })),
         sep(),
         tool(ICON.left, "Align left", () => run("justifyLeft"), "justifyLeft", "Ctrl+Shift+L"),
         tool(ICON.center, "Align centre", () => run("justifyCenter"), "justifyCenter", "Ctrl+Shift+E"),
@@ -1396,7 +1534,7 @@
         tool(ICON.hr, "Divider line", () => run("insertHorizontalRule")),
         charsBtn,
         sep(),
-        tool(ICON.pages, "Page layout: pages or pageless", (b) => layoutMenu(b)),
+        tool(ICON.pages, "Page setup: layout, paper, colour", (b) => layoutMenu(b)),
         tool(ICON.outline, "Show or hide outline", () => { outlineOpen = !outlineOpen; outline.hidden = !outlineOpen; buildOutline(); }),
         tool(ICON.find, "Find and replace", () => openFind(false), null, "Ctrl+F"),
         grammarBtn,
@@ -1995,118 +2133,261 @@
       }
 
       // ----- handwriting: a drawing layer over the page -----
-      const REF = 816; // strokes are stored against this page width, so they scale with the page
+      const REF = 816; // the page is 816 units wide; strokes are stored in those units
       if (!Array.isArray(note.ink)) note.ink = [];
+      if (!Array.isArray(note.stickers)) note.stickers = [];
       const canvas = el("canvas", { class: "sl-ink", "aria-hidden": "true" });
       const ctx = canvas.getContext("2d");
-      let scale = 1;
+      const base = document.createElement("canvas"); // finished strokes, drawn once and reused
+      const bctx = base.getContext("2d");
+      let res = 1;
+      let inkH = 0;
       let drawing = false;      // draw mode on or off
       let stroke = null;        // the stroke being drawn
+      let lasso = null;         // the lasso being drawn: [x, y, x, y, ...]
+      let sel = null;           // { strokes: Set, stickers: Set }
+      let moving = null;        // dragging the selection
       const undoInk = [];
       const redoInk = [];
-      const PEN_COLORS = [["Ink", "#2f2e2b"], ["Brick", "#8a4f45"], ["Moss", "#4d6b55"], ["Slate", "#4f6a80"], ["Plum", "#6d5a80"], ["Clay", "#a3684d"]];
-      const HL_COLORS = [["Butter", "#ece8b0"], ["Sage", "#d3dccb"], ["Rose", "#ecd6d1"], ["Mist", "#d2dbe2"], ["Lavender", "#ddd7f0"], ["Clay", "#e4cdb4"]];
-      const pen = { tool: "pen", color: "#2f2e2b", w: 2.2 };
-      const hl = { tool: "hl", color: "#ece8b0", w: 14 };
-      let inkTool = "pen";                    // pen | hl | eraser
+      const pen = { tool: "pen", color: data.settings.penColor || "#2f2e2b", w: data.settings.penWidth || 2.4 };
+      const hl = { tool: "hl", color: data.settings.hlColor || "#f4e3a1", w: data.settings.hlWidth || 16 };
+      let inkTool = "pen";                    // pen | hl | eraser | lasso
       let eraseMode = note.eraseMode || "stroke"; // stroke | part
       let lastDrawTool = "pen";
       let backToPen = data.settings.eraserBackToPen !== false;
       let fingerDraw = data.settings.fingerDraw !== false;
       let shapeSnap = data.settings.shapeSnap !== false;
       const curPen = () => (inkTool === "hl" ? hl : pen);
-
-      function inkChanged(remember) {
-        if (remember) { undoInk.push(JSON.stringify(note.ink)); redoInk.length = 0; if (undoInk.length > 60) undoInk.shift(); }
-        note.ink = note.ink.filter((s) => s.pts.length >= 2);
+      const snapshot = () => JSON.stringify({ ink: note.ink, st: note.stickers });
+      function remember() {
+        undoInk.push(snapshot());
+        redoInk.length = 0;
+        if (undoInk.length > 80) undoInk.shift();
+      }
+      function inkChanged() {
+        note.ink = note.ink.filter((s) => s.pts.length >= 3);
         touch(note);
+        laterSnap();
         updateStatus();
+        later();
         drawInk();
       }
       function stepInk(from, to) {
         if (!from.length) return;
-        to.push(JSON.stringify(note.ink));
-        note.ink = JSON.parse(from.pop());
+        to.push(snapshot());
+        const back = JSON.parse(from.pop());
+        note.ink = back.ink || [];
+        note.stickers = back.st || [];
+        clearSel();
         touch(note);
+        later();
         drawInk();
         if (histOpen) drawHistory();
       }
 
-      let inkH = 0;
       function sizeCanvas() {
         const k = zoomK();
         const h = paper.getBoundingClientRect().height / k;
-        if (!h) return;
-        scale = 1;
+        if (!h) return false;
         inkH = h;
         // Sharp at any zoom, but never larger than the browser allows for one canvas.
-        const res = Math.max(0.5, Math.min(4, (window.devicePixelRatio || 1) * k, 16000 / h, Math.sqrt(40e6 / (REF * h))));
+        res = Math.max(0.5, Math.min(4, (window.devicePixelRatio || 1) * k, 16000 / h, Math.sqrt(40e6 / (REF * h))));
         const cw = Math.round(REF * res);
         const ch = Math.round(h * res);
         if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
         canvas.style.width = REF + "px";
         canvas.style.height = h + "px";
-        ctx.setTransform(res, 0, 0, res, 0, 0);
-      }
-      function strokePath(s) {
-        const p = s.pts;
-        ctx.strokeStyle = s.color;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.globalAlpha = s.tool === "hl" ? 0.42 : 1;
-        if (p.length === 3) {
-          ctx.beginPath();
-          ctx.lineWidth = s.w * (s.tool === "hl" ? 1 : 0.4 + 0.6 * p[2]);
-          ctx.arc(p[0], p[1], ctx.lineWidth / 2, 0, 6.2832);
-          ctx.fillStyle = s.color;
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          return;
-        }
-        // Highlighter and even-pressure strokes are one smooth path, so see-through ink stays even.
-        let even = s.tool === "hl";
-        if (!even) {
-          even = true;
-          for (let i = 5; i < p.length; i += 3) if (Math.abs(p[i] - p[2]) > 0.05) { even = false; break; }
-        }
-        if (even) {
-          ctx.beginPath();
-          ctx.lineWidth = s.w * (s.tool === "hl" ? 1 : 0.4 + 0.6 * p[2]);
-          ctx.moveTo(p[0], p[1]);
-          for (let i = 3; i < p.length; i += 3) {
-            if (i + 3 < p.length) ctx.quadraticCurveTo(p[i], p[i + 1], (p[i] + p[i + 3]) / 2, (p[i + 1] + p[i + 4]) / 2);
-            else ctx.lineTo(p[i], p[i + 1]);
-          }
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          return;
-        }
-        for (let i = 3; i < p.length; i += 3) {
-          ctx.beginPath();
-          ctx.lineWidth = s.w * (0.4 + 0.6 * ((p[i + 2] + p[i - 1]) / 2));
-          ctx.moveTo(p[i - 3], p[i - 2]);
-          if (i + 3 < p.length) {
-            const mx = (p[i] + p[i + 3]) / 2;
-            const my = (p[i + 1] + p[i + 4]) / 2;
-            ctx.quadraticCurveTo(p[i], p[i + 1], mx, my);
-          } else {
-            ctx.lineTo(p[i], p[i + 1]);
-          }
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-      }
-      function drawInk() {
-        sizeCanvas();
-        ctx.clearRect(0, 0, REF, inkH);
-        for (const s of note.ink) strokePath(s);
-        if (stroke) strokePath(stroke);
+        return true;
       }
 
-      // --- geometry helpers for erasing and shapes ---
+      // --- GoodNotes-style ink: each pen stroke is a filled outline whose width follows
+      //     pressure (or speed, for a mouse or finger), with softly tapered ends. ---
+      function constHalf(p) {
+        for (let i = 2; i < p.length; i += 3) if (Math.abs(p[i] - 0.5) > 0.001) return false;
+        return true;
+      }
+      function inkOutline(s) {
+        const p = s.pts;
+        const size = s.w;
+        const sim = s.sim || constHalf(p);
+        const xs = [];
+        const ys = [];
+        const ps = [];
+        for (let i = 0; i < p.length; i += 3) {
+          if (xs.length && Math.hypot(p[i] - xs[xs.length - 1], p[i + 1] - ys[ys.length - 1]) < 0.35) continue;
+          xs.push(p[i]); ys.push(p[i + 1]); ps.push(p[i + 2]);
+        }
+        const m = xs.length;
+        if (m < 2) {
+          const r = size * 0.55;
+          const dot = [];
+          for (let a = 0; a < 16; a++) dot.push([xs[0] + r * Math.cos((a / 16) * 6.2832), ys[0] + r * Math.sin((a / 16) * 6.2832)]);
+          return dot;
+        }
+        const lens = [0];
+        for (let i = 1; i < m; i++) lens.push(lens[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
+        const total = lens[m - 1];
+        const rad = [];
+        let pr = sim ? 0.42 : ps[0];
+        for (let i = 0; i < m; i++) {
+          if (sim) {
+            // Faster movement draws a slightly thinner line, like a real pen.
+            const d = i ? lens[i] - lens[i - 1] : 0;
+            const sp = Math.min(1, d / (size * 2.2));
+            pr = Math.min(1, pr + (Math.min(1, 1 - sp) - pr) * sp * 0.28);
+          } else {
+            pr += (ps[i] - pr) * 0.45;
+          }
+          let r = size * (0.5 - 0.5 * (0.5 - pr));
+          const taper = Math.min(size * 6, total * 0.28);
+          if (taper > 0) {
+            const a = Math.min(1, lens[i] / taper);
+            const b = Math.min(1, (total - lens[i]) / taper);
+            r *= (0.5 + 0.5 * (1 - (1 - a) * (1 - a))) * (0.55 + 0.45 * (1 - (1 - b) * (1 - b)));
+          }
+          rad.push(Math.max(size * 0.14, r));
+        }
+        const L = [];
+        const R = [];
+        for (let i = 0; i < m; i++) {
+          const a = Math.max(0, i - 1);
+          const b = Math.min(m - 1, i + 1);
+          let dx = xs[b] - xs[a];
+          let dy = ys[b] - ys[a];
+          const len = Math.hypot(dx, dy) || 1;
+          dx /= len; dy /= len;
+          L.push([xs[i] - dy * rad[i], ys[i] + dx * rad[i]]);
+          R.push([xs[i] + dy * rad[i], ys[i] - dx * rad[i]]);
+        }
+        const cap = (cx, cy, r, from) => {
+          const out = [];
+          for (let k = 1; k < 8; k++) {
+            const ang = from - (Math.PI * k) / 8;
+            out.push([cx + r * Math.cos(ang), cy + r * Math.sin(ang)]);
+          }
+          return out;
+        };
+        const endAng = Math.atan2(ys[m - 1] - ys[m - 2], xs[m - 1] - xs[m - 2]);
+        const startAng = Math.atan2(ys[1] - ys[0], xs[1] - xs[0]);
+        return L.concat(cap(xs[m - 1], ys[m - 1], rad[m - 1], endAng + Math.PI / 2), R.reverse(), cap(xs[0], ys[0], rad[0], startAng - Math.PI / 2));
+      }
+      function smoothPath(c, pts, closed) {
+        c.beginPath();
+        if (pts.length < 3) {
+          c.moveTo(pts[0][0], pts[0][1]);
+          for (const q of pts) c.lineTo(q[0], q[1]);
+          return;
+        }
+        const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        if (closed) {
+          const start = mid(pts[pts.length - 1], pts[0]);
+          c.moveTo(start[0], start[1]);
+          for (let i = 0; i < pts.length; i++) {
+            const mm = mid(pts[i], pts[(i + 1) % pts.length]);
+            c.quadraticCurveTo(pts[i][0], pts[i][1], mm[0], mm[1]);
+          }
+          c.closePath();
+        } else {
+          c.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i < pts.length - 1; i++) {
+            const mm = mid(pts[i], pts[i + 1]);
+            c.quadraticCurveTo(pts[i][0], pts[i][1], mm[0], mm[1]);
+          }
+          c.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+        }
+      }
+      function renderStroke(c, s) {
+        const p = s.pts;
+        if (!p.length) return;
+        c.fillStyle = s.color;
+        c.strokeStyle = s.color;
+        c.lineCap = "round";
+        c.lineJoin = "round";
+        if (s.tool === "hl" || s.shape) {
+          // Highlighter and neat shapes: one even line.
+          c.globalAlpha = s.tool === "hl" ? 0.6 : 1;
+          c.lineWidth = s.w;
+          const pts = [];
+          for (let i = 0; i < p.length; i += 3) pts.push([p[i], p[i + 1]]);
+          if (pts.length === 1) pts.push([pts[0][0] + 0.01, pts[0][1]]);
+          if (s.shape) {
+            c.beginPath();
+            c.moveTo(pts[0][0], pts[0][1]);
+            for (const q of pts) c.lineTo(q[0], q[1]);
+          } else smoothPath(c, pts, false);
+          c.stroke();
+          c.globalAlpha = 1;
+          return;
+        }
+        smoothPath(c, inkOutline(s), true);
+        c.fill();
+      }
+      const stickerImgs = new Map();
+      function stickerImg(src) {
+        let img = stickerImgs.get(src);
+        if (!img) {
+          img = new Image();
+          img.onload = () => drawInk();
+          img.src = src;
+          stickerImgs.set(src, img);
+        }
+        return img;
+      }
+      function renderBase() {
+        if (base.width !== canvas.width || base.height !== canvas.height) { base.width = canvas.width; base.height = canvas.height; }
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        bctx.clearRect(0, 0, base.width, base.height);
+        bctx.setTransform(res, 0, 0, res, 0, 0);
+        for (const st of note.stickers) {
+          const img = stickerImg(st.src);
+          if (img.complete && img.naturalWidth) bctx.drawImage(img, st.x, st.y, st.w, st.h);
+        }
+        for (const s of note.ink) renderStroke(bctx, s);
+      }
+      function composite() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(base, 0, 0);
+        ctx.setTransform(res, 0, 0, res, 0, 0);
+        if (stroke) renderStroke(ctx, stroke);
+        if (lasso && lasso.length > 3) {
+          ctx.save();
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 1.4;
+          ctx.strokeStyle = "#5f7f9e";
+          ctx.beginPath();
+          ctx.moveTo(lasso[0], lasso[1]);
+          for (let i = 2; i < lasso.length; i += 2) ctx.lineTo(lasso[i], lasso[i + 1]);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+      function drawInk() {
+        if (!sizeCanvas()) return;
+        renderBase();
+        composite();
+        placeSel();
+      }
+      let liveFrame = 0;
+      function drawLive() {
+        if (liveFrame) return;
+        liveFrame = requestAnimationFrame(() => { liveFrame = 0; composite(); });
+      }
+      cleanups.push(() => cancelAnimationFrame(liveFrame));
+
+      // Lowest point used by drawings and stickers, so pages grow to fit them.
+      function inkBottom() {
+        let b = 0;
+        for (const s of note.ink) for (let i = 1; i < s.pts.length; i += 3) if (s.pts[i] > b) b = s.pts[i];
+        for (const st of note.stickers) b = Math.max(b, st.y + st.h);
+        return b;
+      }
+
+      // --- geometry helpers for erasing, shapes and the lasso ---
       function near(s, x, y, r) {
         const p = s.pts;
         const pad = r + s.w / 2;
+        if (p.length === 3) return (p[0] - x) ** 2 + (p[1] - y) ** 2 <= pad * pad;
         for (let i = 0; i < p.length - 3; i += 3) {
           const dx = p[i + 3] - p[i];
           const dy = p[i + 4] - p[i + 1];
@@ -2117,8 +2398,7 @@
           const ey = p[i + 1] + t * dy - y;
           if (ex * ex + ey * ey <= pad * pad) return true;
         }
-        const last = p.length - 3;
-        return (p[last] - x) ** 2 + (p[last + 1] - y) ** 2 <= pad * pad;
+        return false;
       }
       function eraseAt(x, y, r) {
         let changed = false;
@@ -2127,21 +2407,30 @@
           if (!near(s, x, y, r)) { kept.push(s); continue; }
           changed = true;
           if (eraseMode === "stroke") continue;
-          // Partial rubbing out: keep the pieces of the stroke that were not touched.
+          // Rub out only the part that was touched; keep the rest of the stroke.
           let piece = [];
+          const flush = () => { if (piece.length >= 6) kept.push(Object.assign({}, s, { pts: piece })); piece = []; };
           for (let i = 0; i < s.pts.length; i += 3) {
-            const hit = (s.pts[i] - x) ** 2 + (s.pts[i + 1] - y) ** 2 <= (r + s.w / 2) ** 2;
-            if (hit) {
-              if (piece.length >= 6) kept.push({ tool: s.tool, color: s.color, w: s.w, pts: piece });
-              piece = [];
-            } else {
-              piece.push(s.pts[i], s.pts[i + 1], s.pts[i + 2]);
-            }
+            if ((s.pts[i] - x) ** 2 + (s.pts[i + 1] - y) ** 2 <= (r + s.w / 2) ** 2) flush();
+            else piece.push(s.pts[i], s.pts[i + 1], s.pts[i + 2]);
           }
-          if (piece.length >= 6) kept.push({ tool: s.tool, color: s.color, w: s.w, pts: piece });
+          flush();
+        }
+        if (eraseMode === "stroke") {
+          const before = note.stickers.length;
+          note.stickers = note.stickers.filter((st) => !(x >= st.x && x <= st.x + st.w && y >= st.y && y <= st.y + st.h));
+          if (note.stickers.length !== before) changed = true;
         }
         if (changed) note.ink = kept;
         return changed;
+      }
+      function inPoly(x, y, poly) {
+        let inside = false;
+        for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
+          const xi = poly[i], yi = poly[i + 1], xj = poly[j], yj = poly[j + 1];
+          if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi || 1e-9) + xi) inside = !inside;
+        }
+        return inside;
       }
       // Hold still at the end of a stroke and it becomes a neat line, box, circle or triangle.
       function snapShape(s) {
@@ -2161,7 +2450,7 @@
         for (let i = 1; i < xs.length; i++) len += Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
         const span = Math.hypot(xs[xs.length - 1] - xs[0], ys[ys.length - 1] - ys[0]);
         const closed = span < Math.max(w, h) * 0.32;
-        const mk = (pts) => ({ tool: s.tool, color: s.color, w: s.w, pts: pts.flatMap(([x, y]) => [x, y, 0.8]) });
+        const mk = (pts) => ({ tool: s.tool, color: s.color, w: s.w, shape: true, pts: pts.flatMap(([x, y]) => [x, y, 0.5]) });
         if (!closed) {
           if (len && span / len > 0.88) return mk([[xs[0], ys[0]], [xs[xs.length - 1], ys[ys.length - 1]]]);
           return null;
@@ -2173,19 +2462,15 @@
           return a + (xs[i] * ys[j] - xs[j] * ys[i]);
         }, 0) / 2);
         const fill = area / (w * h || 1);
-        if (fill > 0.88) {
-          return mk([[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY], [minX, minY]]);
-        }
+        if (fill > 0.88) return mk([[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY], [minX, minY]]);
         if (fill < 0.58) {
-          // Three corners: the points furthest from the middle, spread around it.
           const picked = [];
           for (let a = -90; a < 270; a += 120) {
             let best = null;
             let bestD = -1;
             for (let i = 0; i < xs.length; i++) {
               const ang = (Math.atan2(ys[i] - cy, xs[i] - cx) * 180) / Math.PI;
-              let d = Math.abs(((ang - a + 540) % 360) - 180);
-              if (d > 120) continue;
+              if (Math.abs(((ang - a + 540) % 360) - 180) > 120) continue;
               const dist = Math.hypot(xs[i] - cx, ys[i] - cy);
               if (dist > bestD) { bestD = dist; best = [xs[i], ys[i]]; }
             }
@@ -2194,113 +2479,478 @@
           if (picked.length === 3) return mk(picked.concat([picked[0]]));
         }
         const pts = [];
-        for (let a = 0; a <= 360; a += 10) {
+        for (let a = 0; a <= 360; a += 6) {
           const r = (a * Math.PI) / 180;
           pts.push([cx + (w / 2) * Math.cos(r), cy + (h / 2) * Math.sin(r)]);
         }
         return mk(pts);
       }
 
+      // --- lasso selection: move, resize, recolour, copy or delete strokes and stickers ---
+      const selBox = el("div", { class: "sl-sel", hidden: true });
+      const selGrip = el("div", { class: "sl-sel-grip", title: "Drag to resize" });
+      const selBar = el("div", { class: "sl-sel-bar" });
+      selBox.append(selGrip, selBar);
+      function selBounds() {
+        if (!sel) return null;
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        for (const s of sel.strokes) {
+          for (let i = 0; i < s.pts.length; i += 3) {
+            x1 = Math.min(x1, s.pts[i] - s.w / 2); y1 = Math.min(y1, s.pts[i + 1] - s.w / 2);
+            x2 = Math.max(x2, s.pts[i] + s.w / 2); y2 = Math.max(y2, s.pts[i + 1] + s.w / 2);
+          }
+        }
+        for (const st of sel.stickers) {
+          x1 = Math.min(x1, st.x); y1 = Math.min(y1, st.y); x2 = Math.max(x2, st.x + st.w); y2 = Math.max(y2, st.y + st.h);
+        }
+        return x1 === Infinity ? null : { x: x1 - 6, y: y1 - 6, w: x2 - x1 + 12, h: y2 - y1 + 12 };
+      }
+      function clearSel() {
+        sel = null;
+        selBox.hidden = true;
+      }
+      function placeSel() {
+        const b = selBounds();
+        if (!b || !drawing) { selBox.hidden = true; return; }
+        selBox.hidden = false;
+        Object.assign(selBox.style, { left: b.x + "px", top: b.y + "px", width: b.w + "px", height: b.h + "px" });
+        selBar.classList.toggle("below", b.y < 60);
+      }
+      function drawSelBar() {
+        selBar.textContent = "";
+        const keep = (e) => { e.preventDefault(); e.stopPropagation(); };
+        selBar.append(
+          el("button", { class: "sl-pill", onpointerdown: keep, onclick: () => {
+            remember();
+            const copy = [];
+            const dup = { strokes: new Set(), stickers: new Set() };
+            for (const s of sel.strokes) { const c = JSON.parse(JSON.stringify(s)); for (let i = 0; i < c.pts.length; i += 3) { c.pts[i] += 24; c.pts[i + 1] += 24; } note.ink.push(c); dup.strokes.add(c); copy.push(c); }
+            for (const st of sel.stickers) { const c = Object.assign({}, st, { x: st.x + 24, y: st.y + 24 }); note.stickers.push(c); dup.stickers.add(c); }
+            sel = dup;
+            inkChanged();
+          }, text: "Copy" }),
+          el("button", { class: "sl-pill", onpointerdown: keep, onclick: (e) => {
+            colorPicker(e.currentTarget, { title: "Recolour", colors: PEN_PALETTE, current: pen.color, onPick: (c) => {
+              remember();
+              for (const s of sel.strokes) if (s.tool !== "hl") s.color = c;
+              inkChanged();
+            } });
+          }, text: "Colour" }),
+          el("button", { class: "sl-pill", onpointerdown: keep, onclick: () => {
+            remember();
+            note.ink = note.ink.filter((s) => !sel.strokes.has(s));
+            note.stickers = note.stickers.filter((st) => !sel.stickers.has(st));
+            clearSel();
+            inkChanged();
+          }, text: "Delete" }));
+      }
+      // Drag the corner to resize everything selected.
+      selGrip.addEventListener("pointerdown", (e) => {
+        if (!sel) return;
+        e.preventDefault();
+        e.stopPropagation();
+        selGrip.setPointerCapture(e.pointerId);
+        remember();
+        const b = selBounds();
+        const start = point(e);
+        const orig = { strokes: [...sel.strokes].map((s) => s.pts.slice()), widths: [...sel.strokes].map((s) => s.w), stickers: [...sel.stickers].map((st) => Object.assign({}, st)) };
+        const move = (ev) => {
+          const q = point(ev);
+          const f = Math.max(0.15, Math.max((b.w + q.x - start.x) / b.w, (b.h + q.y - start.y) / b.h));
+          [...sel.strokes].forEach((s, i) => {
+            const o = orig.strokes[i];
+            for (let j = 0; j < o.length; j += 3) { s.pts[j] = b.x + (o[j] - b.x) * f; s.pts[j + 1] = b.y + (o[j + 1] - b.y) * f; }
+            s.w = Math.max(0.5, orig.widths[i] * f);
+          });
+          [...sel.stickers].forEach((st, i) => {
+            const o = orig.stickers[i];
+            st.x = b.x + (o.x - b.x) * f; st.y = b.y + (o.y - b.y) * f; st.w = o.w * f; st.h = o.h * f;
+          });
+          drawInk();
+        };
+        const up = () => {
+          selGrip.removeEventListener("pointermove", move);
+          selGrip.removeEventListener("pointerup", up);
+          inkChanged();
+        };
+        selGrip.addEventListener("pointermove", move);
+        selGrip.addEventListener("pointerup", up);
+      });
+
       // --- pointer handling ---
       let held = null;
+      let rawLast = null;
       function point(e) {
         const r = canvas.getBoundingClientRect();
         const k = zoomK();
-        return {
-          x: (e.clientX - r.left) / k,
-          y: (e.clientY - r.top) / k,
-          p: e.pressure && e.pressure > 0 && e.pointerType !== "mouse" ? e.pressure : 0.5,
-        };
+        return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k, p: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 0.5 };
+      }
+      function stickerAt(x, y) {
+        for (let i = note.stickers.length - 1; i >= 0; i--) {
+          const st = note.stickers[i];
+          if (x >= st.x && x <= st.x + st.w && y >= st.y && y <= st.y + st.h) return st;
+        }
+        return null;
+      }
+      // Drawing near the bottom adds room, like extending the paper in CollaNotes.
+      function growIfNeeded(y) {
+        if (y > inkH - 140) {
+          if (layout() === "pages") note.extraPages = (note.extraPages || 0) + 1;
+          else note.extraSpace = (note.extraSpace || 0) + 600;
+          later();
+        }
       }
       canvas.addEventListener("pointerdown", (e) => {
         if (!drawing || e.button !== 0) return;
         if (e.pointerType === "touch" && !fingerDraw) return;
         canvas.setPointerCapture(e.pointerId);
         e.preventDefault();
-        undoInk.push(JSON.stringify(note.ink));
-        redoInk.length = 0;
-        if (undoInk.length > 60) undoInk.shift();
         const q = point(e);
+        if (inkTool === "lasso") {
+          const b = selBounds();
+          const hitSel = b && q.x >= b.x && q.x <= b.x + b.w && q.y >= b.y && q.y <= b.y + b.h;
+          const st = hitSel ? null : stickerAt(q.x, q.y);
+          if (st) { sel = { strokes: new Set(), stickers: new Set([st]) }; drawSelBar(); }
+          if (hitSel || st) {
+            remember();
+            moving = { x: q.x, y: q.y };
+            placeSel();
+            return;
+          }
+          clearSel();
+          lasso = [q.x, q.y];
+          return;
+        }
+        remember();
         if (inkTool === "eraser") {
           stroke = null;
-          eraseAt(q.x, q.y, eraseMode === "stroke" ? 6 : 10);
-          drawInk();
+          if (eraseAt(q.x, q.y, eraseMode === "stroke" ? 6 : 10)) drawInk();
           return;
         }
         const c = curPen();
         stroke = { tool: c.tool, color: c.color, w: c.w, pts: [q.x, q.y, q.p] };
+        if (e.pointerType !== "pen") stroke.sim = true;
+        rawLast = q;
         held = { x: q.x, y: q.y, t: Date.now() };
+        drawLive();
       });
       canvas.addEventListener("pointermove", (e) => {
         if (!drawing || !e.buttons) return;
         if (e.pointerType === "touch" && !fingerDraw) return;
-        const q = point(e);
+        // Every point the pen reported since the last frame, not just the latest one.
+        const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+        if (moving && sel) {
+          const q = point(e);
+          const dx = q.x - moving.x;
+          const dy = q.y - moving.y;
+          moving = { x: q.x, y: q.y };
+          for (const s of sel.strokes) for (let i = 0; i < s.pts.length; i += 3) { s.pts[i] += dx; s.pts[i + 1] += dy; }
+          for (const st of sel.stickers) { st.x += dx; st.y += dy; }
+          drawInk();
+          return;
+        }
+        if (lasso) {
+          for (const ev of evs) { const q = point(ev); lasso.push(q.x, q.y); }
+          drawLive();
+          return;
+        }
         if (inkTool === "eraser") {
-          if (eraseAt(q.x, q.y, eraseMode === "stroke" ? 6 : 10)) drawInk();
+          let changed = false;
+          for (const ev of evs) { const q = point(ev); if (eraseAt(q.x, q.y, eraseMode === "stroke" ? 6 : 10)) changed = true; }
+          if (changed) drawInk();
           return;
         }
         if (!stroke) return;
-        const n = stroke.pts.length;
-        if (Math.hypot(q.x - stroke.pts[n - 3], q.y - stroke.pts[n - 2]) < 1.1) return;
-        stroke.pts.push(q.x, q.y, q.p);
-        if (held && Math.hypot(q.x - held.x, q.y - held.y) > 4) held = { x: q.x, y: q.y, t: Date.now() };
-        drawInk();
+        for (const ev of evs) {
+          const q = point(ev);
+          rawLast = q;
+          const n = stroke.pts.length;
+          const lx = stroke.pts[n - 3];
+          const ly = stroke.pts[n - 2];
+          // A light smoothing filter takes out hand jitter without making the line lag.
+          const d = Math.hypot(q.x - lx, q.y - ly);
+          if (d < 0.6) continue;
+          const t = stroke.tool === "hl" ? 0.5 : Math.min(0.75, 0.38 + d / (stroke.w * 10));
+          stroke.pts.push(lx + (q.x - lx) * t, ly + (q.y - ly) * t, stroke.pts[n - 1] + (q.p - stroke.pts[n - 1]) * 0.5);
+          if (held && Math.hypot(q.x - held.x, q.y - held.y) > 4) held = { x: q.x, y: q.y, t: Date.now() };
+        }
+        drawLive();
       });
       function endStroke(e) {
         if (!drawing) return;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (moving) {
+          moving = null;
+          inkChanged();
+          return;
+        }
+        if (lasso) {
+          const poly = lasso;
+          lasso = null;
+          if (poly.length >= 8) {
+            const picked = { strokes: new Set(), stickers: new Set() };
+            for (const s of note.ink) {
+              let inside = 0;
+              const count = s.pts.length / 3;
+              for (let i = 0; i < s.pts.length; i += 3) if (inPoly(s.pts[i], s.pts[i + 1], poly)) inside++;
+              if (inside / count >= 0.6) picked.strokes.add(s);
+            }
+            for (const st of note.stickers) if (inPoly(st.x + st.w / 2, st.y + st.h / 2, poly)) picked.stickers.add(st);
+            if (picked.strokes.size || picked.stickers.size) { sel = picked; drawSelBar(); }
+          }
+          composite();
+          placeSel();
+          return;
+        }
         if (inkTool === "eraser") {
-          inkChanged(false);
+          inkChanged();
           if (backToPen) setTool(lastDrawTool);
           return;
         }
         if (!stroke) return;
         let s = stroke;
         stroke = null;
+        // Catch the line up to where the pen actually lifted.
+        if (rawLast) {
+          const n = s.pts.length;
+          if (Math.hypot(rawLast.x - s.pts[n - 3], rawLast.y - s.pts[n - 2]) > 0.4) s.pts.push(rawLast.x, rawLast.y, s.pts[n - 1]);
+        }
         if (shapeSnap && held && Date.now() - held.t > 450) s = snapShape(s) || s;
+        for (let i = 0; i < s.pts.length; i++) s.pts[i] = Math.round(s.pts[i] * 100) / 100;
         note.ink.push(s);
-        inkChanged(false);
+        growIfNeeded(s.pts[s.pts.length - 2]);
+        inkChanged();
       }
       canvas.addEventListener("pointerup", endStroke);
       canvas.addEventListener("pointercancel", endStroke);
 
+      // --- stickers ---
+      function addSticker(src, w, h) {
+        remember();
+        const sr = scroller.getBoundingClientRect();
+        const pr = paper.getBoundingClientRect();
+        const k = zoomK();
+        // Drop it in the middle of what is on screen.
+        const cx = ((sr.left + sr.width / 2) - pr.left) / k;
+        const cy = ((sr.top + sr.height / 2) - pr.top) / k;
+        const st = { src, x: Math.max(10, Math.min(REF - w - 10, cx - w / 2)), y: Math.max(10, cy - h / 2), w, h };
+        note.stickers.push(st);
+        if (!drawing) toggleDraw(true);
+        setTool("lasso");
+        sel = { strokes: new Set(), stickers: new Set([st]) };
+        drawSelBar();
+        inkChanged();
+      }
+      function stickerMenu(anchor) {
+        closeMenu();
+        const grid = el("div", { class: "sl-sticker-grid" });
+        for (const [name, svgText] of STICKERS) {
+          const src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText);
+          grid.append(el("button", {
+            class: "sl-sticker", title: name, "aria-label": name,
+            onclick: () => { closeMenu(); addSticker(src, 110, 110); },
+          }, el("img", { src, alt: "" })));
+        }
+        const mine = (data.settings.myStickers || []);
+        const mineGrid = el("div", { class: "sl-sticker-grid" });
+        mine.forEach((src, i) => {
+          mineGrid.append(el("button", {
+            class: "sl-sticker", title: "My sticker", "aria-label": "My sticker " + (i + 1),
+            onclick: () => { closeMenu(); const im = new Image(); im.onload = () => { const r = Math.min(1, 160 / Math.max(im.width, im.height)); addSticker(src, im.width * r, im.height * r); }; im.src = src; },
+          }, el("img", { src, alt: "" })));
+        });
+        menu = el("div", { class: "sl-menu sl-sticker-menu", role: "dialog", "aria-label": "Stickers" },
+          el("span", { class: "sl-choice-head", text: "STICKERS" }), grid,
+          el("span", { class: "sl-choice-head", text: "MY STICKERS" }),
+          mine.length ? mineGrid : el("p", { class: "sl-g-note", text: "Make your own from any picture." }),
+          el("button", { class: "sl-pill dark", onclick: () => { closeMenu(); stickerPick.click(); }, text: "Make a sticker from a picture…" }));
+        root.append(menu);
+        placeMenu(anchor, 300, 420);
+      }
+      const stickerPick = el("input", {
+        type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", hidden: true,
+        onchange: async (e) => {
+          const f = e.target.files && e.target.files[0];
+          e.target.value = "";
+          if (!f) return;
+          const res2 = await readImage(f);
+          if (res2) stickerTrim(res2.url);
+        },
+      });
+      // Trim a picture into a sticker, like Instagram: circle, rounded, heart, star, or draw your own outline.
+      function stickerTrim(url) {
+        const img = new Image();
+        img.onload = () => {
+          const S = 360;
+          const r = Math.min(S / img.width, S / img.height);
+          const w = Math.round(img.width * r);
+          const h = Math.round(img.height * r);
+          const cv = el("canvas", { class: "sl-trim-canvas", width: String(w), height: String(h) });
+          const c = cv.getContext("2d");
+          let shape = "free";
+          let path = [];
+          function redraw() {
+            c.clearRect(0, 0, w, h);
+            c.globalAlpha = 0.35;
+            c.drawImage(img, 0, 0, w, h);
+            c.globalAlpha = 1;
+            c.save();
+            clipShape(c);
+            c.drawImage(img, 0, 0, w, h);
+            c.restore();
+            c.save();
+            c.setLineDash([6, 5]);
+            c.strokeStyle = "#ffffff";
+            c.lineWidth = 2;
+            clipShape(c, true);
+            c.stroke();
+            c.restore();
+          }
+          function clipShape(cc, outlineOnly) {
+            const m = Math.min(w, h);
+            const cx = w / 2;
+            const cy = h / 2;
+            cc.beginPath();
+            if (shape === "circle") cc.arc(cx, cy, m / 2 - 4, 0, 6.2832);
+            else if (shape === "rounded") { const rr = 28; cc.moveTo(8 + rr, 8); cc.arcTo(w - 8, 8, w - 8, h - 8, rr); cc.arcTo(w - 8, h - 8, 8, h - 8, rr); cc.arcTo(8, h - 8, 8, 8, rr); cc.arcTo(8, 8, w - 8, 8, rr); }
+            else if (shape === "heart") {
+              const s2 = m / 2 - 6;
+              cc.moveTo(cx, cy + s2 * 0.9);
+              cc.bezierCurveTo(cx - s2 * 1.4, cy, cx - s2 * 0.9, cy - s2 * 1.1, cx, cy - s2 * 0.45);
+              cc.bezierCurveTo(cx + s2 * 0.9, cy - s2 * 1.1, cx + s2 * 1.4, cy, cx, cy + s2 * 0.9);
+            } else if (shape === "star") {
+              for (let i = 0; i < 10; i++) {
+                const rr = i % 2 ? m * 0.22 : m / 2 - 6;
+                const a = -Math.PI / 2 + (i * Math.PI) / 5;
+                if (i) cc.lineTo(cx + rr * Math.cos(a), cy + rr * Math.sin(a)); else cc.moveTo(cx + rr * Math.cos(a), cy + rr * Math.sin(a));
+              }
+              cc.closePath();
+            } else if (path.length > 6) {
+              cc.moveTo(path[0], path[1]);
+              for (let i = 2; i < path.length; i += 2) cc.lineTo(path[i], path[i + 1]);
+              cc.closePath();
+            } else cc.rect(0, 0, w, h);
+            if (!outlineOnly) cc.clip();
+          }
+          let tracing = false;
+          cv.addEventListener("pointerdown", (e) => { if (shape !== "free") return; tracing = true; path = []; cv.setPointerCapture(e.pointerId); });
+          cv.addEventListener("pointermove", (e) => {
+            if (!tracing) return;
+            const b = cv.getBoundingClientRect();
+            path.push((e.clientX - b.left) * (w / b.width), (e.clientY - b.top) * (h / b.height));
+            redraw();
+          });
+          cv.addEventListener("pointerup", () => { tracing = false; redraw(); });
+          const shapes = el("div", { class: "sl-row" });
+          for (const [k, name] of [["free", "Draw outline"], ["circle", "Circle"], ["rounded", "Rounded"], ["heart", "Heart"], ["star", "Star"]]) {
+            shapes.append(el("button", { class: "sl-pill" + (shape === k ? " dark" : ""), "data-shape": k, onclick: (e) => {
+              shape = k;
+              shapes.querySelectorAll("button").forEach((b) => b.classList.toggle("dark", b.dataset.shape === k));
+              redraw();
+            }, text: name }));
+          }
+          function finish() {
+            // Cut out the shape, trimmed to its edges, with a soft white border like a real sticker.
+            const out = document.createElement("canvas");
+            out.width = w + 16;
+            out.height = h + 16;
+            const o = out.getContext("2d");
+            o.translate(8, 8);
+            o.save();
+            clipShape(o, true);
+            o.lineWidth = 12;
+            o.strokeStyle = "#ffffff";
+            o.lineJoin = "round";
+            o.shadowColor = "rgba(60,52,44,0.25)";
+            o.shadowBlur = 6;
+            o.stroke();
+            o.restore();
+            o.save();
+            clipShape(o);
+            o.drawImage(img, 0, 0, w, h);
+            o.restore();
+            const src = out.toDataURL("image/png");
+            data.settings.myStickers = [src].concat(data.settings.myStickers || []).slice(0, 24);
+            save();
+            closeMenu();
+            const rr = Math.min(1, 170 / Math.max(out.width, out.height));
+            addSticker(src, out.width * rr, out.height * rr);
+          }
+          closeMenu();
+          menu = el("div", { class: "sl-menu sl-trim", role: "dialog", "aria-label": "Make a sticker" },
+            el("span", { class: "sl-choice-head", text: "MAKE A STICKER" }),
+            el("p", { class: "sl-g-note", text: "Pick a shape, or draw around the part you want to keep." }),
+            shapes, cv,
+            el("div", { class: "sl-row" },
+              el("button", { onclick: () => closeMenu(), text: "Cancel" }),
+              el("button", { class: "sl-primary", onclick: finish, text: "Make sticker" })));
+          root.append(menu);
+          menu.style.left = Math.max(8, (root.clientWidth - 420) / 2) + "px";
+          menu.style.top = "70px";
+          setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+          redraw();
+        };
+        img.src = url;
+      }
+
       // --- the pen tray ---
       const tray = el("div", { class: "sl-tray", hidden: true, role: "toolbar", "aria-label": "Drawing tools" });
       const widthInput = el("input", {
-        type: "range", min: "1", max: "40", step: "0.5", class: "sl-range", "aria-label": "Stroke width",
-        oninput: (e) => setWidth(parseFloat(e.target.value)),
+        type: "range", min: "0.5", max: "40", step: "0.1", class: "sl-range", "aria-label": "Stroke width",
+        oninput: (e) => setWidth(parseFloat(e.target.value), true),
       });
       const widthNum = el("input", {
-        type: "number", min: "1", max: "40", step: "0.5", class: "sl-wnum", "aria-label": "Stroke width in points",
+        type: "number", min: "0.5", max: "40", step: "0.1", class: "sl-wnum", "aria-label": "Stroke width in points",
         onchange: (e) => setWidth(parseFloat(e.target.value)),
       });
-      function setWidth(v) {
+      const widthDot = el("span", { class: "sl-wdot" });
+      function rememberPen() {
+        data.settings.penColor = pen.color; data.settings.penWidth = pen.w;
+        data.settings.hlColor = hl.color; data.settings.hlWidth = hl.w;
+        save();
+      }
+      function setWidth(v, fromSlider) {
         if (!(v > 0)) return;
-        curPen().w = Math.min(40, Math.max(1, v));
-        drawTray();
+        curPen().w = Math.round(Math.min(40, Math.max(0.5, v)) * 10) / 10;
+        rememberPen();
+        if (fromSlider) { widthNum.value = curPen().w; showDot(); } else drawTray();
+      }
+      function showDot() {
+        const c = curPen();
+        const d = Math.max(3, Math.min(26, c.w));
+        Object.assign(widthDot.style, { width: d + "px", height: d + "px", background: c.color, opacity: c.tool === "hl" ? 0.5 : 1 });
       }
       function setTool(t) {
+        if (t !== "lasso") clearSel();
         inkTool = t;
-        if (t !== "eraser") lastDrawTool = t;
+        if (t === "pen" || t === "hl") lastDrawTool = t;
         drawTray();
       }
-      function trayBtn(icon, label, on, onClick, extra) {
-        return el("button", { class: "sl-tool" + (on ? " on" : "") + (extra || ""), "aria-label": label, title: label, "aria-pressed": on ? "true" : "false", onclick: onClick }, svg(icon, 16));
+      function trayBtn(icon, label, on, onClick) {
+        return el("button", { class: "sl-tool" + (on ? " on" : ""), "aria-label": label, title: label, "aria-pressed": on ? "true" : "false", onclick: onClick }, svg(icon, 16));
+      }
+      function trayColor(c) {
+        c.color = c.color || "#2f2e2b";
+        rememberPen();
+        drawTray();
       }
       function drawTray() {
         tray.textContent = "";
         tray.hidden = !drawing;
         drawBtn.classList.toggle("on", drawing);
         canvas.classList.toggle("on", drawing);
-        canvas.style.cursor = inkTool === "eraser" ? "cell" : "crosshair";
+        canvas.style.cursor = inkTool === "eraser" ? "cell" : inkTool === "lasso" ? "default" : "crosshair";
         body.setAttribute("contenteditable", drawing ? "false" : "true");
         paper.classList.toggle("drawing", drawing);
-        if (!drawing) return;
+        if (!drawing) { clearSel(); return; }
+        const sepEl = () => el("span", { class: "sl-tool-sep", "aria-hidden": "true" });
         tray.append(
           trayBtn(ICON.draw, "Pen", inkTool === "pen", () => setTool("pen")),
           trayBtn(ICON.mark, "Highlighter", inkTool === "hl", () => setTool("hl")),
           trayBtn(ICON.eraser, "Eraser", inkTool === "eraser", () => setTool("eraser")),
-          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }));
+          trayBtn(ICON.lasso, "Lasso: select, move, resize", inkTool === "lasso", () => setTool("lasso")),
+          trayBtn(ICON.sticker, "Stickers", false, (e) => stickerMenu(e.currentTarget || e)),
+          sepEl());
         if (inkTool === "eraser") {
           for (const [k, name] of [["stroke", "Whole stroke"], ["part", "Rub out part"]]) {
             tray.append(el("button", {
@@ -2312,32 +2962,48 @@
           tray.append(el("label", { class: "sl-tray-opt" },
             el("input", { type: "checkbox", checked: backToPen, onchange: (e) => { backToPen = e.target.checked; data.settings.eraserBackToPen = backToPen; save(); } }),
             "Back to pen after erasing"));
+        } else if (inkTool === "lasso") {
+          tray.append(el("span", { class: "sl-tray-opt", text: "Draw around strokes or stickers, then drag, resize, recolour or delete them." }));
         } else {
           const c = curPen();
-          const colors = inkTool === "hl" ? HL_COLORS : PEN_COLORS;
+          const quick = c.tool === "hl" ? HL_PALETTE.slice(0, 7) : PEN_PALETTE.slice(0, 7);
+          const recent = (data.settings.customColors || []).slice(0, 3);
           const dots = el("div", { class: "sl-pen-colors" });
-          for (const [name, value] of colors) {
+          const list = quick.map((x) => x[1]).concat(recent.filter((x) => !quick.some((q) => q[1] === x)));
+          if (!list.includes(c.color)) list.push(c.color);
+          for (const value of list) {
             dots.append(el("button", {
               class: "sl-pen-dot" + (c.color === value ? " on" : ""),
               style: "background:" + value,
-              "aria-label": name, title: name,
-              onclick: () => { c.color = value; drawTray(); },
+              "aria-label": colorName(value), title: colorName(value),
+              onclick: () => { c.color = value; trayColor(c); },
             }));
           }
+          dots.append(el("button", {
+            class: "sl-pen-dot sl-more-colors", "aria-label": "More colours", title: "More colours, custom colour and eyedropper",
+            onclick: (e) => colorPicker(e.currentTarget, { title: c.tool === "hl" ? "Highlighter colour" : "Pen colour", colors: c.tool === "hl" ? HL_PALETTE : PEN_PALETTE, current: c.color, onPick: (v) => { c.color = v; trayColor(c); } }),
+          }));
+          const dropper = el("button", {
+            class: "sl-tool", "aria-label": "Eyedropper: pick any colour on screen", title: "Eyedropper: pick any colour on screen",
+            onclick: () => pickScreenColor((v) => { c.color = v; addCustomColor(v); trayColor(c); }),
+          }, svg(ICON.dropper, 16));
           widthInput.value = c.w;
           widthNum.value = c.w;
-          tray.append(dots, el("span", { class: "sl-tool-sep", "aria-hidden": "true" }), widthInput, widthNum, el("span", { class: "sl-tray-unit", text: "pt" }));
+          showDot();
+          tray.append(dots, dropper, sepEl(), widthDot, widthInput, widthNum, el("span", { class: "sl-tray-unit", text: "pt" }));
         }
         tray.append(
-          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
-          trayBtn(ICON.undo, "Undo stroke", false, () => stepInk(undoInk, redoInk)),
-          trayBtn(ICON.redo, "Redo stroke", false, () => stepInk(redoInk, undoInk)),
+          sepEl(),
+          trayBtn(ICON.undo, "Undo", false, () => stepInk(undoInk, redoInk)),
+          trayBtn(ICON.redo, "Redo", false, () => stepInk(redoInk, undoInk)),
           trayBtn(ICON.shapes, "Hold at the end of a stroke to make a neat shape", shapeSnap, () => { shapeSnap = !shapeSnap; data.settings.shapeSnap = shapeSnap; save(); drawTray(); }),
+          el("button", { class: "sl-pill", title: "Add more paper below", onclick: () => { if (layout() === "pages") note.extraPages = (note.extraPages || 0) + 1; else note.extraSpace = (note.extraSpace || 0) + 600; touch(note); later(); setTimeout(() => scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 120); }, text: layout() === "pages" ? "+ Page" : "+ Space" }),
           el("label", { class: "sl-tray-opt" },
             el("input", { type: "checkbox", checked: fingerDraw, onchange: (e) => { fingerDraw = e.target.checked; data.settings.fingerDraw = fingerDraw; save(); } }),
             "Draw with finger"),
-          el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
-          el("button", { class: "sl-pill", onclick: () => toggleDraw(false), text: "Done" }));
+          sepEl(),
+          el("button", { class: "sl-pill dark", onclick: () => toggleDraw(false), text: "Done" }));
+        placeSel();
       }
       function toggleDraw(force) {
         drawing = force === undefined ? !drawing : force;
@@ -2345,6 +3011,7 @@
         if (!drawing) body.focus();
       }
       const drawBtn = tool(ICON.draw, "Draw and handwrite", () => toggleDraw(), null, "Ctrl+D");
+      tools.append(stickerPick);
 
       // Slot the drawing and history buttons in beside Print.
       const printAnchor = tools.querySelector('[aria-label="Print or save as PDF"]');
@@ -2408,6 +3075,7 @@
         note.title = v.title || "";
         note.html = v.html || "";
         note.ink = JSON.parse(JSON.stringify(v.ink || []));
+        note.stickers = JSON.parse(JSON.stringify(v.stickers || []));
         touch(note);
         render();
         showToast("Restored the version from " + whenText(v.t) + ".", () => {
@@ -2417,6 +3085,7 @@
           note.title = back.title;
           note.html = back.html;
           note.ink = back.ink;
+          note.stickers = back.stickers || [];
           list.pop();
           touch(note);
           render();
@@ -2702,6 +3371,8 @@
           paper.style.minHeight = "";
           paper.style.paddingTop = paper.style.paddingBottom = "";
           pageCount = 1;
+          const tall = Math.max(inkBottom() + 160, 680) + (note.extraSpace || 0);
+          paper.style.minHeight = tall + "px";
           updateStatus();
           drawInk();
           return;
@@ -2744,7 +3415,9 @@
         }
         drawInk();
         const bottom = (body.getBoundingClientRect().bottom - top0()) / zk;
-        pageCount = Math.max(1, Math.floor(Math.max(0, bottom - 1) / stride) + 1);
+        const inkB = inkBottom();
+        const inkPages = inkB > 0 ? Math.floor(inkB / stride) + 1 : 1;
+        pageCount = Math.max(1, Math.floor(Math.max(0, bottom - 1) / stride) + 1, inkPages) + (note.extraPages || 0);
         paper.style.minHeight = pageCount * stride - GAP + "px";
         drawInk();
         sheets.textContent = "";
@@ -2809,7 +3482,7 @@
       const due = dueInfo(note.due);
       if (due) meta.append(el("span", { class: "sl-chip " + due.cls, text: due.text }));
 
-      const paper = el("div", { class: "sl-paper" }, sheets, meta, title, body, canvas);
+      const paper = el("div", { class: "sl-paper" }, sheets, meta, title, body, canvas, selBox);
       // Clicking the empty part of a page puts the cursor at the end of the text.
       paper.addEventListener("mousedown", (e) => {
         if (e.target !== paper) return;
@@ -2867,6 +3540,7 @@
       });
       ro2.observe(scroller);
       cleanups.push(() => ro2.disconnect());
+      applyPaper();
       updateStatus();
       buildOutline();
       drawTray();
@@ -2970,6 +3644,12 @@
 
     function openMenu(note, anchor) {
       closeMenu();
+      const coverRow = el("div", { class: "sl-cover-row", role: "group", "aria-label": "Cover" },
+        el("button", { class: "sl-cover-pick none" + (!note.cover ? " on" : ""), title: "No cover", "aria-label": "No cover", onclick: () => { delete note.cover; touch(note); closeMenu(); render(); } }),
+        ...COVERS.map(([id, name, col]) => el("button", {
+          class: "sl-cover-pick" + (note.cover === id ? " on" : ""), style: "--cv:" + col, title: name, "aria-label": name + " cover",
+          onclick: () => { note.cover = id; touch(note); closeMenu(); render(); },
+        })));
       const swatches = el("div", { class: "sl-swatches", role: "group", "aria-label": "Colour" });
       for (const col of COLORS) {
         swatches.append(el("button", {
@@ -2996,6 +3676,7 @@
 
       menu = el("div", { class: "sl-menu", role: "dialog", "aria-label": "Note options" },
         el("label", null, "COLOUR", swatches),
+        note.type === "doc" ? el("div", { class: "sl-field" }, "COVER", coverRow) : null,
         el("div", { class: "sl-field" }, "LABEL", labelDd.el),
         el("div", { class: "sl-field" }, "IMPORTANCE", impDd.el),
         el("label", null, "DUE DATE", dueInput),
@@ -3113,6 +3794,7 @@
       view.doc = null;
 
       const scroller = el("div", { class: "sl-scroll" });
+      if (opts.full && data.settings.listZoom && data.settings.listZoom !== 1) scroller.style.zoom = String(data.settings.listZoom);
       root.append(toolbar(), scroller);
       if (toast) root.append(toast);
 
@@ -3216,6 +3898,35 @@
         });
       }
     }
+    // ----- zoom: a touchpad pinch (or Ctrl + scroll) zooms StillLife's content, never the whole window -----
+    let listZoomSave = 0;
+    function setListZoom(z) {
+      z = Math.round(Math.min(1.8, Math.max(0.6, z)) * 1000) / 1000;
+      data.settings.listZoom = z;
+      const sc = root.querySelector(".sl-scroll");
+      if (sc) sc.style.zoom = String(z);
+      clearTimeout(listZoomSave);
+      listZoomSave = setTimeout(save, 400);
+    }
+    if (opts.full) {
+      window.addEventListener("wheel", (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault(); // stops the whole app from zooming; the doc page zooms itself
+        if (view.doc || !root.isConnected) return;
+        const f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.004));
+        setListZoom((data.settings.listZoom || 1) * f);
+      }, { passive: false, capture: true });
+      window.addEventListener("keydown", (e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return;
+        const k = e.key;
+        if (k !== "=" && k !== "+" && k !== "-" && k !== "0") return;
+        e.preventDefault();
+        if (view.doc) return;
+        const z = data.settings.listZoom || 1;
+        setListZoom(k === "0" ? 1 : k === "-" ? z / 1.1 : z * 1.1);
+      });
+    }
+
     document.addEventListener("keydown", (e) => {
       // Ctrl+F on the notes list jumps to search (inside a doc it finds text instead).
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key || "").toLowerCase() === "f" && !view.doc && root.isConnected) {

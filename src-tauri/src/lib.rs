@@ -480,6 +480,170 @@ fn save_notes(app: AppHandle, window: tauri::Window, data: String) -> Result<(),
 }
 
 // ---------------------------------------------------------------------------
+// Files, recordings and the few web services StillLife talks to
+// ---------------------------------------------------------------------------
+
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn b64_encode(data: &[u8]) -> String {
+    let mut out = String::with_capacity(data.len() * 4 / 3 + 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(B64[(n >> 18) as usize & 63] as char);
+        out.push(B64[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { B64[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { B64[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+fn b64_decode(text: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for c in text.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' | b'\n' | b'\r' | b' ' => continue,
+            _ => return Err("The file data was damaged".into()),
+        } as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8 & 0xff);
+        }
+    }
+    Ok(out)
+}
+
+/// Keeps a file name simple and safe for Windows.
+fn safe_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '-' } else { c })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').to_string();
+    if trimmed.is_empty() { "StillLife file".to_string() } else { trimmed.chars().take(120).collect() }
+}
+
+fn export_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?.join("StillLife");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Saves an exported doc (or a backup) into Downloads\StillLife and returns where it went.
+/// `data` is plain text, or base64 when `binary` is true. Never overwrites an existing file.
+#[tauri::command]
+fn export_file(app: AppHandle, name: String, data: String, binary: bool) -> Result<String, String> {
+    let dir = export_dir(&app)?;
+    let name = safe_name(&name);
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (name[..i].to_string(), name[i..].to_string()),
+        _ => (name.clone(), String::new()),
+    };
+    let mut path = dir.join(&name);
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{} ({}){}", stem, n, ext));
+        n += 1;
+    }
+    let bytes = if binary { b64_decode(&data)? } else { data.into_bytes() };
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Opens File Explorer with an exported file selected.
+#[tauri::command]
+fn reveal_file(app: AppHandle, path: String) -> Result<(), String> {
+    let dir = export_dir(&app)?;
+    let target = std::path::PathBuf::from(&path);
+    if !target.starts_with(&dir) {
+        return Err("Only StillLife exports can be shown".into());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", target.display()))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = target;
+    }
+    Ok(())
+}
+
+fn media_file(app: &AppHandle, id: &str) -> Result<std::path::PathBuf, String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("Bad recording name".into());
+    }
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("media");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join(format!("{}.bin", id)))
+}
+
+/// Keeps a lecture recording next to the notes (recordings are too big for notes.json).
+#[tauri::command]
+fn save_media(app: AppHandle, id: String, data: String) -> Result<(), String> {
+    let file = media_file(&app, &id)?;
+    std::fs::write(file, b64_decode(&data)?).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_media(app: AppHandle, id: String) -> Result<String, String> {
+    let file = media_file(&app, &id)?;
+    let bytes = std::fs::read(file).map_err(|_| "This recording couldn't be found".to_string())?;
+    Ok(b64_encode(&bytes))
+}
+
+#[tauri::command]
+fn delete_media(app: AppHandle, id: String) -> Result<(), String> {
+    let file = media_file(&app, &id)?;
+    let _ = std::fs::remove_file(file);
+    Ok(())
+}
+
+/// Talks to the small set of online services StillLife uses (translation, dictionary,
+/// running code). Anything else is refused.
+#[tauri::command]
+async fn web_request(url: String, body: Option<String>) -> Result<String, String> {
+    const ALLOWED: [&str; 3] = [
+        "https://api.mymemory.translated.net/",
+        "https://api.dictionaryapi.dev/",
+        "https://wandbox.org/api/",
+    ];
+    if !ALLOWED.iter().any(|a| url.starts_with(a)) {
+        return Err("StillLife doesn't connect to that address".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(25))
+            .user_agent("StillLife")
+            .build();
+        let result = match body {
+            Some(b) => agent.post(&url).set("Content-Type", "application/json").send_string(&b),
+            None => agent.get(&url).call(),
+        };
+        match result {
+            Ok(resp) => resp.into_string().map_err(|e| e.to_string()),
+            Err(ureq::Error::Status(404, resp)) => Ok(resp.into_string().unwrap_or_default()),
+            Err(ureq::Error::Status(code, _)) => Err(format!("The service answered with error {}", code)),
+            Err(e) => Err(format!("Couldn't connect: {}", e)),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ---------------------------------------------------------------------------
 // Start-up
 // ---------------------------------------------------------------------------
 
@@ -504,7 +668,13 @@ pub fn run() {
             island_enabled,
             load_notes,
             save_notes,
-            device_name
+            device_name,
+            export_file,
+            reveal_file,
+            save_media,
+            load_media,
+            delete_media,
+            web_request
         ])
         .setup(|app| {
             // Remembered choices from last time.
