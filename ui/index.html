@@ -71,7 +71,7 @@
       position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
       background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform 0.2s ease;
     }
-    .switch input:checked + .track { background: linear-gradient(135deg, #6f5a8e 0%, #5b5f8f 55%, #4f6a80 100%); }
+    .switch input:checked + .track { background: #7d6c96; }
     .switch input:checked + .track .knob { transform: translateX(16px); }
     .switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 2px; }
 
@@ -147,10 +147,11 @@
     <div id="notes" class="notes-area"></div>
   </main>
 
-  <footer>Every note, quietly in orbit. · version 1.0.1</footer>
+  <footer>Every note, quietly in orbit. · version 1.1</footer>
 
   <script src="tools.js"></script>
   <script src="i18n.js"></script>
+  <script src="group.js"></script>
   <script src="notes.js"></script>
   <script>
     StillLifeNotes.mount(document.getElementById("notes"), { label: "main", full: true, clockEl: document.getElementById("clock") });

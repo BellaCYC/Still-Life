@@ -1,4 +1,4 @@
-//! StillLife — v1.0.0
+//! StillLife — v1.1.0
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
@@ -439,6 +439,27 @@ fn notes_file(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_data_dir().ok().map(|dir| dir.join("notes.json"))
 }
 
+/// Opens a web link (from a doc or a picture's source) in the default browser.
+/// Only http and https links are allowed, and no shell is involved.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    let u = url.trim();
+    let ok = (u.starts_with("https://") || u.starts_with("http://"))
+        && u.len() < 4000
+        && !u.chars().any(|c| c.is_control() || c == '"' || c == ' ');
+    if !ok {
+        return Err("Only web links can be opened".into());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", u])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// F11 in the full window: switch full screen on or off.
 #[tauri::command]
 fn toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
@@ -683,7 +704,8 @@ pub fn run() {
             load_media,
             delete_media,
             web_request,
-            toggle_fullscreen
+            toggle_fullscreen,
+            open_link
         ])
         .setup(|app| {
             // Remembered choices from last time.

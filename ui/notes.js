@@ -13,7 +13,7 @@
   "use strict";
 
   const tauri = window.__TAURI__;
-  const VERSION = "1.0.1";
+  const VERSION = "1.1";
   const hasApp = !!(tauri && tauri.core);
 
   const COLORS = ["sage", "mist", "rose", "oat", "lilac", "clay", "celadon", "lavender"];
@@ -97,6 +97,11 @@
     exportIcon: '<path d="M12 15V3.5M7.5 8L12 3.5 16.5 8"/><path d="M5 13v6a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-6"/>',
     importIcon: '<path d="M12 3.5V15M7.5 10.5L12 15l4.5-4.5"/><path d="M5 13v6a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-6"/>',
     star: '<path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
+    timer: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2M9.5 2.5h5M12 2.5V6"/>',
+    bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+    send: '<path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/>',
+    screenshot: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><rect x="8" y="8" width="8" height="8" rx="1.5"/>',
+    paper: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 14.5h7M9 18h4"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     draw: '<path d="M3 21l1-4L16 5a2.4 2.4 0 0 1 3.5 3.5L7.5 20z"/><path d="M14 7l3 3"/>',
     eraser: '<path d="M8 20h12M5.5 16.5l9-9a2 2 0 0 1 3 0l3 3a2 2 0 0 1 0 3L14 20H8z"/><path d="M11 11l5.5 5.5"/>',
@@ -143,7 +148,7 @@
   const ALLOWED = {
     P: ["style"], DIV: ["style"], BR: [], H1: ["style"], H2: ["style"], H3: ["style"], B: [], STRONG: [], I: [], EM: [], U: [],
     S: [], STRIKE: [], SUP: [], SUB: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: ["class"], CODE: [], PRE: ["data-lang"], SPAN: ["style"],
-    FONT: ["color"], A: ["href"], IMG: ["src", "alt", "style"],
+    FONT: ["color"], A: ["href"], IMG: ["src", "alt", "style", "data-src"],
   };
   const FONTS = [
     ["default", "Default", "Segoe UI Variable, Segoe UI, system-ui, sans-serif"],
@@ -196,6 +201,7 @@
             if (keep && attr.name === "class") keep = attr.value.trim() === "sl-pb"; // page break only
             if (keep && attr.name === "src") keep = SAFE_IMG.test(attr.value.trim()); // pictures stored inside the note only
             if (keep && attr.name === "data-lang") keep = /^[a-z0-9+#]{1,14}$/.test(attr.value);
+            if (keep && attr.name === "data-src") keep = /^https?:\/\/[^\s"<>]+$/i.test(attr.value.trim());
             if (keep && attr.name === "style") {
               const clean = safeStyle(attr.value);
               if (clean) child.setAttribute("style", clean);
@@ -606,7 +612,11 @@
   ];
 
   // ---------- paper and covers ----------
-  const PAPER_STYLES = [["plain", "Plain"], ["lined", "Lined"], ["grid", "Grid"], ["dots", "Dots"], ["cornell", "Cornell"]];
+  const PAPER_STYLES = [
+    ["plain", "Plain"], ["lined", "Lined"], ["college", "College ruled"], ["wide", "Wide ruled"], ["legal", "Legal pad"],
+    ["grid", "Grid"], ["smallgrid", "Graph paper"], ["dots", "Dots"], ["cornell", "Cornell notes"], ["music", "Music staff"], ["planner", "Day planner"],
+  ];
+  const PAPER_DEFAULT_COLOR = { legal: "#fbf3c4" };
   const PAPER_COLORS = [["Cream", "#fffdf9"], ["White", "#ffffff"], ["Ivory", "#fbf5e6"], ["Sage", "#eff2ea"], ["Mist", "#edf1f4"], ["Rose", "#f7eeec"], ["Lavender", "#f2eff8"], ["Oat", "#f4ede1"]];
   const COVERS = [
     ["sage", "Sage linen", "#b7c2ae"], ["mist", "Mist", "#a9b7c2"], ["rose", "Rose", "#d3b5af"], ["oat", "Oat", "#dccdb5"],
@@ -737,6 +747,92 @@
     return out;
   }
 
+
+  // ---------- opening web links in the default browser ----------
+  const SAFE_LINK = /^https?:\/\/[^\s"<>]+$/i;
+  function openLink(url) {
+    if (!SAFE_LINK.test(url || "")) return;
+    if (hasApp) tauri.core.invoke("open_link", { url }).catch(() => {});
+    else window.open(url, "_blank", "noopener");
+  }
+  // Where a pasted or dropped picture came from: the link around it (often the page),
+  // otherwise the picture's own web address.
+  function pictureSource(dt) {
+    if (!dt) return "";
+    const html = dt.getData("text/html") || "";
+    if (html) {
+      const d = new DOMParser().parseFromString(html, "text/html");
+      const a = d.querySelector("a[href] img") && d.querySelector("a[href] img").closest("a");
+      if (a && SAFE_LINK.test(a.getAttribute("href"))) return a.getAttribute("href");
+      const img = d.querySelector("img[src]");
+      if (img && SAFE_LINK.test(img.getAttribute("src"))) return img.getAttribute("src");
+    }
+    const uri = (dt.getData("text/uri-list") || "").split(/\r?\n/).find((x) => x && !x.startsWith("#"));
+    return uri && SAFE_LINK.test(uri) ? uri : "";
+  }
+
+  // ---------- running code (on the free Wandbox service; never on this computer) ----------
+  async function webRequest(url, bodyObj) {
+    if (hasApp) return tauri.core.invoke("web_request", { url, body: bodyObj ? JSON.stringify(bodyObj) : null });
+    const r = await fetch(url, bodyObj ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyObj) } : undefined);
+    return r.text();
+  }
+  const CODE_LANGS = [
+    ["python", "Python"], ["cpp", "C++"], ["c", "C"], ["java", "Java"], ["javascript", "JavaScript"], ["csharp", "C#"],
+    ["go", "Go"], ["rust", "Rust"], ["ruby", "Ruby"], ["php", "PHP"], ["swift", "Swift"], ["typescript", "TypeScript"], ["bash", "Bash"],
+  ];
+  const WANDBOX_LANG = { python: "Python", cpp: "C++", c: "C", java: "Java", javascript: "JavaScript", csharp: "C#", go: "Go", rust: "Rust", ruby: "Ruby", php: "PHP", swift: "Swift", typescript: "TypeScript", bash: "Bash script" };
+  const WANDBOX_FALLBACK = { python: "cpython-head", cpp: "gcc-head", c: "gcc-head-c", java: "openjdk-jdk-22+36", javascript: "nodejs-20.17.0", csharp: "dotnetcore-8.0.402", go: "go-1.23.2", rust: "rust-1.82.0", ruby: "ruby-4.0.2", php: "php-8.3.12", swift: "swift-6.0.1", typescript: "typescript-5.6.2", bash: "bash" };
+  const STARTER = {
+    python: 'name = input()\nprint(f"Hello, {name}!")',
+    cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    string name;\n    cin >> name;\n    cout << "Hello, " << name << "!" << endl;\n    return 0;\n}',
+    c: '#include <stdio.h>\n\nint main(void) {\n    char name[64];\n    scanf("%63s", name);\n    printf("Hello, %s!\\n", name);\n    return 0;\n}',
+    java: 'import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner in = new Scanner(System.in);\n        String name = in.next();\n        System.out.println("Hello, " + name + "!");\n    }\n}',
+    javascript: 'const name = require("fs").readFileSync(0, "utf8").trim();\nconsole.log(`Hello, ${name}!`);',
+    csharp: 'using System;\n\nclass Program {\n    static void Main() {\n        Console.WriteLine("Hello, world!");\n    }\n}',
+    go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, world!")\n}',
+    rust: 'fn main() {\n    println!("Hello, world!");\n}',
+    ruby: 'name = gets&.strip || "world"\nputs "Hello, #{name}!"',
+    php: '<?php\necho "Hello, world!\\n";',
+    swift: 'print("Hello, world!")',
+    typescript: 'const greet = (name: string): string => `Hello, ${name}!`;\nconsole.log(greet("world"));',
+    bash: 'read name\necho "Hello, $name!"',
+  };
+  let compilers = null;
+  async function compilerFor(lang) {
+    if (!compilers) {
+      compilers = {};
+      try {
+        const list = JSON.parse(await webRequest("https://wandbox.org/api/list.json"));
+        for (const c of list) {
+          for (const [k, wl] of Object.entries(WANDBOX_LANG)) {
+            if (c.language === wl && !compilers[k]) compilers[k] = c.name;
+            // Prefer a stable build over an experimental "head" one.
+            if (c.language === wl && compilers[k] && /head/.test(compilers[k]) && !/head/.test(c.name)) compilers[k] = c.name;
+          }
+        }
+      } catch (e) { /* use the built-in names */ }
+    }
+    return compilers[lang] || WANDBOX_FALLBACK[lang];
+  }
+  // Returns { out, failed } for the program's output (or the error that stopped it).
+  async function runOnWandbox(lang, code, stdin) {
+    if (lang === "java" && !/class\s+prog\b/.test(code)) {
+      // Wandbox runs Java as "prog": keep the student's class and add a tiny starter.
+      const main = /(?:public\s+)?class\s+(\w+)[^{]*\{[\s\S]*?static\s+void\s+main\s*\(/.exec(code);
+      code = code.replace(/public\s+class\s+/g, "class ");
+      if (main) code += "\nclass prog { public static void main(String[] a) throws Exception { " + main[1] + ".main(a); } }\n";
+    }
+    try {
+      const compiler = await compilerFor(lang);
+      const res = JSON.parse(await webRequest("https://wandbox.org/api/compile.json", { compiler, code, stdin: stdin || "" }));
+      const out = [res.compiler_error, res.program_output, res.program_error].filter(Boolean).join("\n").trim();
+      return { out: out || "(no output)", failed: !!(res.status && res.status !== "0") };
+    } catch (e) {
+      return { out: "Couldn't run the code. Check your internet connection.\n" + (e && e.message ? e.message : ""), failed: true };
+    }
+  }
+
   // ---------- storage ----------
   const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m", docLayout: "pages", grammar: true, autoSymbols: true, recentChars: [] };
   const TEXT_SIZES = { s: "Small", m: "Medium", l: "Large", xl: "Extra large" };
@@ -850,7 +946,7 @@
         .sort((a, b) => (view.archive ? (b.resolvedAt || 0) - (a.resolvedAt || 0) : compare(a, b)));
     }
 
-    function newNote(type) {
+    function newNote(type, extra) {
       const used = data.notes.filter((n) => !n.resolved).length;
       const note = {
         id: uid(),
@@ -866,14 +962,20 @@
         resolved: false,
       };
       if (type === "agenda") note.items = [];
-      else {
+      else if (type === "code") {
+        note.lang = data.settings.codeLang || "python";
+        note.code = STARTER[note.lang] || "";
+        note.stdin = "";
+        note.color = ["mist", "lilac", "celadon", "sage"][used % 4];
+      } else {
         note.html = "";
         if (data.settings.paperStyle) note.paperStyle = data.settings.paperStyle;
         if (data.settings.paperColor) note.paperColor = data.settings.paperColor;
+        if (extra) for (const [k, v] of Object.entries(extra)) if (v !== undefined) note[k] = v;
       }
       data.notes.unshift(note);
       view.archive = false;
-      if (type === "doc") {
+      if (type === "doc" || type === "code") {
         // Save straight away so the full window can find it.
         clearTimeout(saveTimer);
         const text = JSON.stringify(data);
@@ -886,6 +988,66 @@
       }
     }
 
+    // ---------- choosing paper for a new doc, like GoodNotes ----------
+    function askTemplate() {
+      closeMenu();
+      const pick = {
+        style: data.settings.paperStyle || "plain",
+        color: data.settings.paperColor || "#fffdf9",
+        layout: data.settings.docLayout || "pages",
+        cover: data.settings.lastCover || "",
+      };
+      let sheet = null;
+      const close = () => { if (sheet) sheet.remove(); sheet = null; document.removeEventListener("keydown", esc, true); };
+      const esc = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+      const body2 = el("div", { class: "sl-tpl-body" });
+      function draw() {
+        body2.textContent = "";
+        const covers = el("div", { class: "sl-cover-row big" },
+          el("button", { class: "sl-cover-pick none" + (!pick.cover ? " on" : ""), title: "No cover", "aria-label": "No cover", onclick: () => { pick.cover = ""; draw(); } }),
+          ...COVERS.map(([id, name, col]) => el("button", { class: "sl-cover-pick" + (pick.cover === id ? " on" : ""), style: "--cv:" + col, title: name, "aria-label": name + " cover", onclick: () => { pick.cover = id; draw(); } })));
+        const tiles = el("div", { class: "sl-tpl-grid" });
+        for (const [k, name] of PAPER_STYLES) {
+          tiles.append(el("button", {
+            class: "sl-tpl" + (pick.style === k ? " on" : ""), "aria-label": name + " paper",
+            onclick: () => { pick.style = k; if (PAPER_DEFAULT_COLOR[k]) pick.color = PAPER_DEFAULT_COLOR[k]; else if (pick.color === "#fbf3c4") pick.color = "#fffdf9"; draw(); },
+          }, el("span", { class: "sl-paper-tile big pp-" + k, style: "--paper-bg:" + pick.color }), el("span", { class: "sl-tpl-name", text: name })));
+        }
+        const colors = el("div", { class: "sl-palette wide" });
+        for (const [name, v] of PAPER_COLORS.concat([["Legal yellow", "#fbf3c4"]])) {
+          colors.append(el("button", { class: "sl-swatch" + (pick.color === v ? " on" : ""), style: "background:" + v, title: name, "aria-label": name + " paper", onclick: () => { pick.color = v; draw(); } }));
+        }
+        const layoutRow = el("div", { class: "sl-seg" },
+          el("button", { class: pick.layout === "pages" ? "on" : "", onclick: () => { pick.layout = "pages"; draw(); }, text: "Pages" }),
+          el("button", { class: pick.layout === "pageless" ? "on" : "", onclick: () => { pick.layout = "pageless"; draw(); }, text: "Pageless" }));
+        body2.append(
+          el("span", { class: "sl-choice-head", text: "PAPER" }), tiles,
+          el("div", { class: "sl-tpl-row" },
+            el("div", null, el("span", { class: "sl-choice-head", text: "PAPER COLOUR" }), colors),
+            el("div", null, el("span", { class: "sl-choice-head", text: "LAYOUT" }), layoutRow)),
+          el("span", { class: "sl-choice-head", text: "COVER" }), covers);
+      }
+      draw();
+      const create = () => {
+        data.settings.paperStyle = pick.style;
+        data.settings.paperColor = pick.color;
+        data.settings.docLayout = pick.layout;
+        data.settings.lastCover = pick.cover;
+        close();
+        newNote("doc", { paperStyle: pick.style, paperColor: pick.color, layout: pick.layout, cover: pick.cover || undefined });
+      };
+      sheet = el("div", { class: "sl-sheet-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
+        el("div", { class: "sl-settings sl-tpl-sheet", role: "dialog", "aria-label": "New doc" },
+          el("div", { class: "sl-g-head" }, el("span", { class: "sl-set-title", text: "New doc" }),
+            el("button", { class: "sl-tool", "aria-label": "Close", onclick: close }, svg(ICON.x, 15))),
+          body2,
+          el("div", { class: "sl-row sl-tpl-actions" },
+            el("button", { class: "sl-pill", onclick: close, text: "Cancel" }),
+            el("button", { class: "sl-pill dark sl-tpl-go", onclick: create, text: "Create doc" }))));
+      root.append(sheet);
+      document.addEventListener("keydown", esc, true);
+    }
+
     // ---------- docs open as pages ----------
     function openDoc(id) {
       const note = data.notes.find((n) => n.id === id);
@@ -896,6 +1058,7 @@
         return;
       }
       view.doc = id;
+      view.study = false;
       const openDocs = (data.settings.openDocs || []).filter((x) => x !== id);
       const at = openDocs.indexOf(view.lastDoc);
       openDocs.splice(at >= 0 ? at + 1 : openDocs.length, 0, id);
@@ -981,7 +1144,7 @@
       }
 
       const types = el("div", { class: "sl-seg", role: "group", "aria-label": "Show" });
-      for (const t of [["all", "Everything"], ["agenda", "Agendas"], ["doc", "Docs"], ["starred", "Starred"]]) {
+      for (const t of [["all", "Everything"], ["agenda", "Agendas"], ["doc", "Docs"], ["code", "Code"], ["starred", "Starred"]]) {
         types.append(el("button", { class: view.type === t[0] ? "on" : "", onclick: () => { view.type = t[0]; render(); }, text: t[1] }));
       }
 
@@ -1024,7 +1187,8 @@
         }));
 
       const newAgenda = el("button", { class: "sl-new", onclick: () => newNote("agenda") }, svg(ICON.plus, 13), "Agenda");
-      const newDoc = el("button", { class: "sl-new", onclick: () => newNote("doc") }, svg(ICON.plus, 13), "Doc");
+      const newDoc = el("button", { class: "sl-new", onclick: () => askTemplate() }, svg(ICON.plus, 13), "Doc");
+      const newCode = el("button", { class: "sl-new", title: "Write and run code (C++, Java, Python…)", onclick: () => newNote("code") }, svg(ICON.plus, 13), "Code");
       const moreBtn = el("button", {
         class: "sl-new alt sl-icon-only", "aria-label": "More: import, backup, settings", title: "Import, backup, settings",
         onclick: (e) => listMoreMenu(e.currentTarget),
@@ -1032,7 +1196,9 @@
 
       return el("div", { class: "sl-bar" },
         el("div", { class: "sl-group" }, tabs, types),
-        el("div", { class: "sl-group" }, searchBox, viewBtn, archiveBtn, newAgenda, newDoc, moreBtn));
+        el("div", { class: "sl-group" }, searchBox, viewBtn, archiveBtn,
+          opts.full ? el("button", { class: "sl-new alt", title: "Study timer and study groups", onclick: () => { view.study = true; render(); } }, svg(ICON.timer, 14), "Study") : null,
+          newAgenda, newDoc, newCode, moreBtn));
     }
 
     function listMoreMenu(anchor) {
@@ -1240,16 +1406,17 @@
       return c;
     }
 
-    const card = (note) => (note.type === "doc" ? docCard(note) : agendaCard(note));
+    const card = (note) => (note.type === "doc" ? docCard(note) : note.type === "code" ? codeCard(note) : agendaCard(note));
 
     // Clicking a row: docs open; agendas unfold under the row.
     function rowClick(note, e) {
       if (e.target.closest("button, input, label")) return;
-      if (note.type === "doc") openDoc(note.id);
+      if (note.type === "doc" || note.type === "code") openDoc(note.id);
       else { view.expanded = view.expanded === note.id ? null : note.id; render(); }
     }
     function secondLine(note) {
       if (note.type === "doc") return htmlToText(note.html) || "Empty doc";
+      if (note.type === "code") return langName(note.lang || "python") + " \u00B7 " + ((note.code || "").split("\n").find((l) => l.trim()) || "Empty");
       const done = note.items.filter((i) => i.done).length;
       const next = note.items.find((i) => !i.done);
       return done + " of " + note.items.length + " done" + (next ? " \u00B7 next: " + next.text : "");
@@ -1274,9 +1441,9 @@
           onclick: (e) => rowClick(note, e),
           onkeydown: (e) => { if (e.key === "Enter" && e.target === row) rowClick(note, e); },
         },
-          el("span", { class: "sl-swatch", style: "background: var(--c-" + (note.color || "oat") + ")" }, svg(note.type === "doc" ? ICON.doc : ICON.agenda, 13)),
+          el("span", { class: "sl-swatch", style: "background: var(--c-" + (note.color || "oat") + ")" }, svg(note.type === "doc" ? ICON.doc : note.type === "code" ? ICON.code : ICON.agenda, 13)),
           el("div", { class: "sl-row-text" },
-            el("span", { class: "sl-row-title", text: note.title || (note.type === "doc" ? "Untitled doc" : "Untitled agenda") }),
+            el("span", { class: "sl-row-title", text: note.title || (note.type === "doc" ? "Untitled doc" : note.type === "code" ? "Untitled code" : "Untitled agenda") }),
             el("span", { class: "sl-row-sub", text: secondLine(note) })),
           el("div", { class: "sl-row-chips" },
             note.importance === "high" || note.importance === "medium" ? el("span", { class: "sl-chip " + note.importance, text: IMPORTANCE[note.importance] }) : null,
@@ -1314,9 +1481,9 @@
           onclick: (e) => rowClick(note, e),
           onkeydown: (e) => { if (e.key === "Enter" && e.target === row) rowClick(note, e); },
         },
-          el("span", { class: "sl-swatch", style: "background: var(--c-" + (note.color || "oat") + ")" }, svg(note.type === "doc" ? ICON.doc : ICON.agenda, 13)),
+          el("span", { class: "sl-swatch", style: "background: var(--c-" + (note.color || "oat") + ")" }, svg(note.type === "doc" ? ICON.doc : note.type === "code" ? ICON.code : ICON.agenda, 13)),
           el("span", { class: "sl-td sl-td-title" },
-            el("strong", { text: note.title || (note.type === "doc" ? "Untitled doc" : "Untitled agenda") }),
+            el("strong", { text: note.title || (note.type === "doc" ? "Untitled doc" : note.type === "code" ? "Untitled code" : "Untitled agenda") }),
             note.type === "agenda" ? el("span", { class: "sl-row-sub", text: " \u00B7 " + note.items.filter((i) => i.done).length + " of " + note.items.length }) : null),
           el("span", { class: "sl-td", text: label ? label.name : "\u2014" }),
           el("span", { class: "sl-td" }, note.importance === "high" || note.importance === "medium" ? el("span", { class: "sl-chip " + note.importance, text: IMPORTANCE[note.importance] }) : el("span", { class: "sl-faint", text: "Low" })),
@@ -1621,7 +1788,12 @@
           tiles.append(el("button", {
             class: "sl-paper-tile pp-" + k + ((note.paperStyle || "plain") === k ? " on" : ""), title: name, "aria-label": name + " paper",
             style: "--paper-bg:" + (note.paperColor || "#fffdf9"),
-            onclick: () => { note.paperStyle = k; data.settings.paperStyle = k; touch(note); applyPaper(); layoutMenu(anchor); },
+            onclick: () => {
+              note.paperStyle = k;
+              data.settings.paperStyle = k;
+              if (PAPER_DEFAULT_COLOR[k]) note.paperColor = PAPER_DEFAULT_COLOR[k];
+              touch(note); applyPaper(); layoutMenu(anchor);
+            },
           }, el("span", { text: name })));
         }
         const colors = el("div", { class: "sl-palette" });
@@ -1642,7 +1814,7 @@
           el("button", { class: "sl-choice sl-action", onclick: () => { if (layout() === "pages") note.extraPages = (note.extraPages || 0) + 1; else note.extraSpace = (note.extraSpace || 0) + 600; touch(note); closeMenu(); later(); } }, "Add a blank page at the end"),
           (note.extraPages || note.extraSpace) ? el("button", { class: "sl-choice sl-action", onclick: () => { note.extraPages = 0; note.extraSpace = 0; touch(note); closeMenu(); later(); } }, "Remove added blank pages") : null);
         root.append(menu);
-        placeMenu(anchor, 300, 520);
+        placeMenu(anchor, 340, 600);
       }
 
       // ----- keyboard shortcuts list -----
@@ -1652,7 +1824,7 @@
         ["Numbered list", "Ctrl+Shift+7"], ["Bulleted list", "Ctrl+Shift+8"], ["Indent / outdent list", "Tab / Shift+Tab"],
         ["Align left / centre / right", "Ctrl+Shift+L / E / R"], ["Justify", "Ctrl+Shift+J"], ["Insert link", "Ctrl+K"],
         ["Work out selected maths", "Alt+="], ["Translate a word", "Long-press it"], ["Run code (in the code panel)", "Ctrl+Enter"],
-        ["Zoom in / out / 100%", "Ctrl+= / Ctrl+- / Ctrl+0"], ["Zoom with touchpad", "Pinch, or Ctrl + scroll"],
+        ["Zoom the whole window", "Pinch, Ctrl + scroll, Ctrl+= / Ctrl+-"], ["Back to normal size", "Ctrl+0"], ["Zoom just the page", "Zoom menu (100%)"],
         ["Insert picture", "Paste or drop it in"], ["Draw and handwrite", "Ctrl+D"], ["Page break", "Ctrl+Enter"], ["Find", "Ctrl+F"], ["Find and replace", "Ctrl+H"], ["Undo / redo", "Ctrl+Z / Ctrl+Y"],
         ["Print or save as PDF", "Ctrl+P"], ["This list", "Ctrl+/"],
         ["Greek and maths symbols", "\\alpha, \\pi, \\sqrt + space"], ["Arrows and signs", "->  =>  <=  >=  !=  +-"],
@@ -1922,9 +2094,7 @@
         // Anywhere on the doc page
         if (c && !e.shiftKey && !e.altKey) {
           if (k === "p") act = printDoc;
-          else if (k === "=" || k === "+") act = () => stepZoom(1);
-          else if (k === "-") act = () => stepZoom(-1);
-          else if (k === "0") act = () => { zoomMode = 1; data.settings.docZoom = 1; save(); setZoom(1); };
+
           else if (k === "f") act = () => openFind(false);
           else if (k === "h") act = () => openFind(true);
           else if (k === "/") act = () => showShortcuts();
@@ -2127,7 +2297,8 @@
           el("button", { class: "sl-tool", "aria-label": "Close suggestions", onclick: () => toggleGrammar(false) }, svg(ICON.x, 14))),
         el("label", { class: "sl-g-opt" }, gUnderline, "Underline as I type"),
         gList,
-        el("p", { class: "sl-g-note", text: "English grammar, spelling and punctuation rules. Works offline; nothing leaves your computer." }));
+        el("p", { class: "sl-g-note", text: "English grammar, spelling and punctuation rules. Works offline; nothing leaves your computer." }),
+        el("button", { class: "sl-link-btn", onclick: () => { ignored.clear(); note.gIgnore = []; touch(note); check(); }, text: "Show ignored suggestions again" }));
       function toggleGrammar(force) {
         const on = force === undefined ? !grammarOpen : force;
         openSide(on ? "grammar" : null);
@@ -2362,8 +2533,16 @@
         }
         if (charCat === "recent") {
           const rec = data.settings.recentChars || [];
-          if (rec.length) charBody.append(charGrid(rec.map((r) => [r, SYMBOL_NAME[r] || r])));
-          else charBody.append(el("p", { class: "sl-g-note", text: "Symbols and equations you use will appear here." }));
+          if (rec.length) {
+            const g = charGrid(rec.map((r) => [r, SYMBOL_NAME[r] || r]));
+            Array.from(g.children).forEach((btn, i) => {
+              const wrap = el("span", { class: "sl-del-wrap" + (btn.classList.contains("mid") ? " mid" : btn.classList.contains("row") ? " row" : "") });
+              btn.replaceWith(wrap);
+              wrap.append(btn, el("button", { class: "sl-del-x corner", title: "Remove from Recent", "aria-label": "Remove from Recent", onmousedown: (e) => e.preventDefault(),
+                onclick: (e) => { e.stopPropagation(); data.settings.recentChars = rec.filter((_, j) => j !== i); save(); drawChars(); } }, svg(ICON.x, 9)));
+            });
+            charBody.append(g, el("button", { class: "sl-link-btn", onclick: () => { data.settings.recentChars = []; save(); drawChars(); }, text: "Clear recent" }));
+          } else charBody.append(el("p", { class: "sl-g-note", text: "Symbols and equations you use will appear here." }));
           return;
         }
         if (charCat === "equations") {
@@ -3171,10 +3350,12 @@
         const mine = (data.settings.myStickers || []);
         const mineGrid = el("div", { class: "sl-sticker-grid" });
         mine.forEach((src, i) => {
-          mineGrid.append(el("button", {
+          mineGrid.append(el("span", { class: "sl-del-wrap" }, el("button", {
             class: "sl-sticker", title: "My sticker", "aria-label": "My sticker " + (i + 1),
             onclick: () => { closeMenu(); const im = new Image(); im.onload = () => { const r = Math.min(1, 160 / Math.max(im.width, im.height)); addSticker(src, im.width * r, im.height * r); }; im.src = src; },
-          }, el("img", { src, alt: "" })));
+          }, el("img", { src, alt: "" })),
+          el("button", { class: "sl-del-x corner", title: "Delete this sticker", "aria-label": "Delete my sticker " + (i + 1),
+            onclick: (e) => { e.stopPropagation(); data.settings.myStickers = mine.filter((_, j) => j !== i); save(); stickerMenu(anchor); } }, svg(ICON.x, 9))));
         });
         menu = el("div", { class: "sl-menu sl-sticker-menu", role: "dialog", "aria-label": "Stickers" },
           el("span", { class: "sl-choice-head", text: "STICKERS" }), grid,
@@ -3467,6 +3648,7 @@
         previewHead.append(
           el("span", { class: "sl-prev-when", text: whenText(v.t) + " · " + (v.device || "This computer") }),
           el("button", { class: "sl-pill dark", onclick: () => restoreVersion(v), text: "Restore this version" }),
+          el("button", { class: "sl-pill", onclick: () => { note.versions = versionsOf(note).filter((x) => x !== v); save(); closePreview(); }, text: "Delete this version" }),
           el("button", { class: "sl-pill", onclick: closePreview, text: "Back to current" }));
         previewPaper.textContent = "";
         previewPaper.append(el("div", { class: "sl-doc-title sl-prev-title", text: v.title || "Untitled doc" }));
@@ -3525,13 +3707,16 @@
           return;
         }
         for (const v of list) {
-          histList.append(el("button", {
+          histList.append(el("div", { class: "sl-del-wrap block" }, el("button", {
             class: "sl-ver" + (histPick === v ? " on" : ""),
             onclick: () => showVersion(v),
           },
             el("span", { class: "sl-ver-when", text: whenText(v.t) }),
-            el("span", { class: "sl-ver-who", text: (v.device || "This computer") + " · " + htmlToText(v.html).split(" ").filter(Boolean).length + " words" })));
+            el("span", { class: "sl-ver-who", text: (v.device || "This computer") + " · " + htmlToText(v.html).split(" ").filter(Boolean).length + " words" })),
+          el("button", { class: "sl-del-x corner", title: "Delete this version", "aria-label": "Delete version from " + whenText(v.t),
+            onclick: (e) => { e.stopPropagation(); note.versions = versionsOf(note).filter((x) => x !== v); save(); if (histPick === v) closePreview(); else drawHistory(); } }, svg(ICON.x, 9))));
         }
+        histList.append(el("button", { class: "sl-link-btn", onclick: () => { note.versions = []; save(); if (histPick) closePreview(); else drawHistory(); }, text: "Delete all earlier versions" }));
       }
       // Keep a copy once typing settles, and again when the doc is closed.
       let snapTimer = 0;
@@ -3647,7 +3832,7 @@
           reader.readAsDataURL(file);
         });
       }
-      async function insertImages(files) {
+      async function insertImages(files, source) {
         const list = Array.from(files || []).filter((f) => /^image\/(png|jpe?g|gif|webp)$/i.test(f.type));
         if (!list.length) return false;
         saveSel();
@@ -3657,7 +3842,8 @@
           const res = await readImage(f);
           if (!res || !SAFE_IMG.test(res.url)) continue;
           const width = Math.max(10, Math.min(100, Math.round((res.w / 688) * 100)));
-          html += '<img src="' + res.url + '" alt="" style="width: ' + width + '%">';
+          const src = source && /^https?:\/\/[^\s"<>]+$/i.test(source) ? ' data-src="' + source.replace(/&/g, "&amp;") + '"' : "";
+          html += '<img src="' + res.url + '" alt=""' + src + ' style="width: ' + width + '%">';
         }
         if (!html) { updateStatus("that picture couldn't be read"); return true; }
         // Pictures go on their own line, like Google Docs does when you paste into a sentence end.
@@ -3681,12 +3867,15 @@
       tools.insertBefore(imageBtn, charsBtn);
       tools.append(filePick);
 
-      // Click a picture to resize, align or remove it.
+      // Click a picture to resize (drag a corner), align, link or remove it.
       let imgBar = null;
       let imgOn = null;
+      let imgFrame = null;
       function closeImgBar() {
         if (imgBar) imgBar.remove();
+        if (imgFrame) imgFrame.remove();
         imgBar = null;
+        imgFrame = null;
         if (imgOn) imgOn.classList.remove("sl-img-on");
         imgOn = null;
       }
@@ -3695,10 +3884,9 @@
         const m = /width:\s*([\d.]+)%/.exec(img.getAttribute("style") || "");
         return m ? parseFloat(m[1]) : 100;
       }
-      function setImgWidth(img, w) {
-        img.style.width = Math.max(10, Math.min(100, Math.round(w))) + "%";
-        syncBody();
-        later();
+      function setImgWidth(img, w, quiet) {
+        img.style.width = Math.max(5, Math.min(100, Math.round(w * 10) / 10)) + "%";
+        if (!quiet) { syncBody(); later(); }
       }
       function openImgBar(img) {
         closeImgBar();
@@ -3711,43 +3899,107 @@
         sel.addRange(r);
         const block = img.closest("p, div, h1, h2, h3, li, blockquote");
         const slider = el("input", {
-          type: "range", min: "10", max: "100", step: "1", value: String(imgWidth(img)), class: "sl-range", "aria-label": "Picture size",
+          type: "range", min: "5", max: "100", step: "1", value: String(imgWidth(img)), class: "sl-range", "aria-label": "Picture size",
           oninput: (e) => { setImgWidth(img, parseFloat(e.target.value)); place(); },
         });
         const align = (a) => {
           if (block && block !== body) { block.style.textAlign = a; syncBody(); later(); place(); }
         };
+        const keep = (e) => e.preventDefault();
+        const src = img.getAttribute("data-src") || "";
         imgBar = el("div", { class: "sl-imgbar", role: "toolbar", "aria-label": "Picture" },
-          ...[["Small", 33], ["Medium", 60], ["Full width", 100]].map(([name, w]) => el("button", {
-            class: "sl-pill", onmousedown: (e) => e.preventDefault(),
-            onclick: () => { setImgWidth(img, w); slider.value = String(w); place(); }, text: name,
+          ...[["S", 33, "Small"], ["M", 60, "Medium"], ["L", 100, "Full width"]].map(([t, w, name]) => el("button", {
+            class: "sl-pill sl-size", title: name, "aria-label": name, onmousedown: keep,
+            onclick: () => { setImgWidth(img, w); slider.value = String(w); place(); }, text: t,
           })),
           slider,
           el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
-          el("button", { class: "sl-tool", "aria-label": "Align picture left", onmousedown: (e) => e.preventDefault(), onclick: () => align("left") }, svg(ICON.left, 15)),
-          el("button", { class: "sl-tool", "aria-label": "Centre picture", onmousedown: (e) => e.preventDefault(), onclick: () => align("center") }, svg(ICON.center, 15)),
-          el("button", { class: "sl-tool", "aria-label": "Align picture right", onmousedown: (e) => e.preventDefault(), onclick: () => align("right") }, svg(ICON.right, 15)),
+          el("button", { class: "sl-tool", "aria-label": "Align picture left", title: "Align left", onmousedown: keep, onclick: () => align("left") }, svg(ICON.left, 15)),
+          el("button", { class: "sl-tool", "aria-label": "Centre picture", title: "Centre", onmousedown: keep, onclick: () => align("center") }, svg(ICON.center, 15)),
+          el("button", { class: "sl-tool", "aria-label": "Align picture right", title: "Align right", onmousedown: keep, onclick: () => align("right") }, svg(ICON.right, 15)),
           el("span", { class: "sl-tool-sep", "aria-hidden": "true" }),
+          src ? el("button", { class: "sl-pill dark", title: src, onmousedown: keep, onclick: () => openLink(src) }, "Open source ↗") : null,
+          el("button", { class: "sl-tool", "aria-label": src ? "Edit source link" : "Add source link", title: src ? "Edit source link" : "Add the link where you found it", onmousedown: keep, onclick: (e) => linkPicture(img, e.currentTarget) }, svg(ICON.link, 15)),
           el("button", {
-            class: "sl-pill", onmousedown: (e) => e.preventDefault(),
-            onclick: () => { const i = img; closeImgBar(); i.remove(); syncBody(); later(); }, text: "Delete",
-          }));
+            class: "sl-tool", "aria-label": "Delete picture", title: "Delete picture", onmousedown: keep,
+            onclick: () => { const i = img; closeImgBar(); i.remove(); syncBody(); later(); },
+          }, svg(ICON.x, 15)));
         root.append(imgBar);
+        // Four corner handles: drag any corner to resize (the shape stays the same).
+        imgFrame = el("div", { class: "sl-img-frame", "aria-hidden": "true" });
+        for (const corner of ["nw", "ne", "sw", "se"]) {
+          const h = el("span", { class: "sl-img-handle " + corner });
+          h.addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            h.setPointerCapture(e.pointerId);
+            const startX = e.clientX;
+            const startW = img.getBoundingClientRect().width;
+            const full = body.getBoundingClientRect().width || 1;
+            const dir = corner === "ne" || corner === "se" ? 1 : -1;
+            const centred = block && block.style.textAlign === "center" ? 2 : 1;
+            const move = (ev) => {
+              const w = startW + dir * (ev.clientX - startX) * centred;
+              setImgWidth(img, (w / full) * 100, true);
+              slider.value = String(imgWidth(img));
+              place();
+            };
+            const up = () => {
+              h.removeEventListener("pointermove", move);
+              h.removeEventListener("pointerup", up);
+              syncBody();
+              later();
+              setTimeout(place, 50);
+            };
+            h.addEventListener("pointermove", move);
+            h.addEventListener("pointerup", up);
+          });
+          imgFrame.append(h);
+        }
+        root.append(imgFrame);
         function place() {
           if (!imgBar) return;
           const b = img.getBoundingClientRect();
           const rr = root.getBoundingClientRect();
+          Object.assign(imgFrame.style, { left: b.left - rr.left + "px", top: b.top - rr.top + "px", width: b.width + "px", height: b.height + "px" });
           const wBar = imgBar.offsetWidth || 420;
           imgBar.style.left = Math.max(8, Math.min(b.left - rr.left + b.width / 2 - wBar / 2, rr.width - wBar - 8)) + "px";
-          const below = b.bottom - rr.top + 8;
-          imgBar.style.top = (below + 50 > rr.height ? Math.max(8, b.top - rr.top - 52) : below) + "px";
+          const below = b.bottom - rr.top + 12;
+          imgBar.style.top = (below + 50 > rr.height ? Math.max(8, b.top - rr.top - 56) : below) + "px";
         }
         place();
       }
+      // Add or change where a picture came from.
+      function linkPicture(img, anchor) {
+        closeMenu();
+        const input = el("input", { type: "url", class: "sl-link-input", placeholder: "https://… the page where you found it", value: img.getAttribute("data-src") || "", "aria-label": "Source link" });
+        const apply = () => {
+          let v = input.value.trim();
+          if (v && !/^https?:\/\//i.test(v)) v = "https://" + v;
+          if (v && SAFE_LINK.test(v)) img.setAttribute("data-src", v); else img.removeAttribute("data-src");
+          closeMenu();
+          syncBody();
+          openImgBar(img);
+        };
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
+        menu = el("div", { class: "sl-menu", role: "dialog", "aria-label": "Picture source" },
+          el("label", null, "WHERE THIS PICTURE CAME FROM", input),
+          el("div", { class: "sl-row" },
+            el("button", { onclick: () => { input.value = ""; apply(); }, text: "Remove link" }),
+            el("button", { class: "sl-primary", onclick: apply, text: "Save" })));
+        root.append(menu);
+        placeMenu(anchor, 280, 130);
+        setTimeout(() => input.focus(), 0);
+      }
       body.addEventListener("mousedown", (e) => {
         const img = e.target.closest && e.target.closest("img");
-        if (img && body.contains(img)) { e.preventDefault(); body.focus(); openImgBar(img); }
-        else closeImgBar();
+        if (img && body.contains(img)) {
+          e.preventDefault();
+          // Ctrl+click opens where the picture came from.
+          if ((e.ctrlKey || e.metaKey) && img.getAttribute("data-src")) { openLink(img.getAttribute("data-src")); return; }
+          body.focus();
+          openImgBar(img);
+        } else closeImgBar();
       });
       body.addEventListener("dragover", (e) => {
         if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault();
@@ -3758,7 +4010,7 @@
         e.preventDefault();
         const at = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
         if (at && body.contains(at.startContainer)) savedRange = at;
-        insertImages(files);
+        insertImages(files, pictureSource(e.dataTransfer));
       });
       // Pictures take a moment to load; re-split pages once they have.
       body.addEventListener("load", () => later(), true);
@@ -3831,11 +4083,6 @@
 
       // ===== study tools =====
       const T = window.SLTools;
-      async function webRequest(url, bodyObj) {
-        if (hasApp) return tauri.core.invoke("web_request", { url, body: bodyObj ? JSON.stringify(bodyObj) : null });
-        const r = await fetch(url, bodyObj ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyObj) } : undefined);
-        return r.text();
-      }
       function insertAtCaret(text) {
         restoreSel();
         try { document.execCommand("styleWithCSS", false, false); } catch (e) {}
@@ -3848,7 +4095,7 @@
       let calcOpen = false;
       let calcDeg = data.settings.calcDeg !== false;
       let calcAns = 0;
-      const calcHistory = [];
+      const calcHistory = Array.isArray(data.settings.calcHistory) ? data.settings.calcHistory : (data.settings.calcHistory = []);
       const calcInput = el("input", {
         class: "sl-calc-input", "aria-label": "Sum", placeholder: "Type a sum, e.g. 2sin(30)+√16",
         oninput: () => calcPreview(),
@@ -3886,10 +4133,18 @@
       }
       function drawCalcHist() {
         calcHist.textContent = "";
-        for (const h of calcHistory) {
-          calcHist.append(el("button", { class: "sl-calc-line", title: "Use this again", onclick: () => { calcInput.value = h.expr; calcPreview(); calcInput.focus(); } },
-            el("span", { text: h.expr }), el("b", { text: "= " + h.res })));
-        }
+        if (calcHistory.length > 30) calcHistory.length = 30;
+        save();
+        if (!calcHistory.length) return;
+        calcHist.append(el("div", { class: "sl-hist-top" },
+          el("span", { class: "sl-choice-head", text: "HISTORY" }),
+          el("button", { class: "sl-link-btn", onclick: () => { calcHistory.length = 0; drawCalcHist(); }, text: "Clear all" })));
+        calcHistory.forEach((h, i) => {
+          calcHist.append(el("div", { class: "sl-calc-row" },
+            el("button", { class: "sl-calc-line", title: "Use this again", onclick: () => { calcInput.value = h.expr; calcPreview(); calcInput.focus(); } },
+              el("span", { text: h.expr }), el("b", { text: "= " + h.res })),
+            el("button", { class: "sl-del-x", title: "Delete", "aria-label": "Delete " + h.expr, onclick: () => { calcHistory.splice(i, 1); drawCalcHist(); } }, svg(ICON.x, 10))));
+        });
       }
       function key(label, insert, cls) {
         return el("button", {
@@ -3931,7 +4186,7 @@
       function toggleCalc(force) {
         const on = force === undefined ? !calcOpen : force;
         openSide(on ? "calc" : null);
-        if (on) setTimeout(() => calcInput.focus(), 30);
+        if (on) { drawCalcHist(); setTimeout(() => calcInput.focus(), 30); }
       }
       // Select "12×3+4" in the doc and press Alt+= to get "12×3+4 = 40".
       function calcSelection() {
@@ -4068,36 +4323,6 @@
       cleanups.push(() => clearTimeout(pressTimer));
 
       // ----- code blocks: write code in any language and run it (like OneCompiler) -----
-      const CODE_LANGS = [
-        ["python", "Python"], ["cpp", "C++"], ["c", "C"], ["java", "Java"], ["javascript", "JavaScript"], ["csharp", "C#"],
-        ["go", "Go"], ["rust", "Rust"], ["ruby", "Ruby"], ["php", "PHP"], ["swift", "Swift"], ["typescript", "TypeScript"], ["bash", "Bash"],
-      ];
-      const WANDBOX_LANG = { python: "Python", cpp: "C++", c: "C", java: "Java", javascript: "JavaScript", csharp: "C#", go: "Go", rust: "Rust", ruby: "Ruby", php: "PHP", swift: "Swift", typescript: "TypeScript", bash: "Bash script" };
-      const WANDBOX_FALLBACK = { python: "cpython-head", cpp: "gcc-head", c: "gcc-head-c", java: "openjdk-jdk-22+36", javascript: "nodejs-20.17.0", csharp: "dotnetcore-8.0.402", go: "go-1.23.2", rust: "rust-1.82.0", ruby: "ruby-4.0.2", php: "php-8.3.12", swift: "swift-6.0.1", typescript: "typescript-5.6.2", bash: "bash" };
-      const STARTER = {
-        python: 'name = input()\nprint(f"Hello, {name}!")',
-        cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    string name;\n    cin >> name;\n    cout << "Hello, " << name << "!" << endl;\n    return 0;\n}',
-        c: '#include <stdio.h>\n\nint main(void) {\n    char name[64];\n    scanf("%63s", name);\n    printf("Hello, %s!\\n", name);\n    return 0;\n}',
-        java: 'import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner in = new Scanner(System.in);\n        String name = in.next();\n        System.out.println("Hello, " + name + "!");\n    }\n}',
-        javascript: 'const name = require("fs").readFileSync(0, "utf8").trim();\nconsole.log(`Hello, ${name}!`);',
-      };
-      let compilers = null;
-      async function compilerFor(lang) {
-        if (!compilers) {
-          compilers = {};
-          try {
-            const list = JSON.parse(await webRequest("https://wandbox.org/api/list.json"));
-            for (const c of list) {
-              for (const [k, wl] of Object.entries(WANDBOX_LANG)) {
-                if (c.language === wl && !compilers[k]) compilers[k] = c.name;
-                // Prefer a stable build over an experimental "head" one.
-                if (c.language === wl && compilers[k] && /head/.test(compilers[k]) && !/head/.test(c.name)) compilers[k] = c.name;
-              }
-            }
-          } catch (e) { /* use the built-in names */ }
-        }
-        return compilers[lang] || WANDBOX_FALLBACK[lang];
-      }
       function renderCode(pre) {
         pre.setAttribute("contenteditable", "false");
         const lang = pre.getAttribute("data-lang") || "python";
@@ -4174,26 +4399,12 @@
         if (!codePre) return;
         const lang = codePre.getAttribute("data-lang") || "python";
         data.settings.codeLang = lang;
-        let code = codeArea.value;
-        if (lang === "java" && !/class\s+prog\b/.test(code)) {
-          // Wandbox runs Java as "prog": keep the student's class and add a tiny starter.
-          const main = /(?:public\s+)?class\s+(\w+)[^{]*\{[\s\S]*?static\s+void\s+main\s*\(/.exec(code);
-          code = code.replace(/public\s+class\s+/g, "class ");
-          if (main) code += "\nclass prog { public static void main(String[] a) throws Exception { " + main[1] + ".main(a); } }\n";
-        }
         runBtn.disabled = true;
         codeOutput.className = "sl-code-out";
         codeOutput.textContent = "Running…";
-        try {
-          const compiler = await compilerFor(lang);
-          const res = JSON.parse(await webRequest("https://wandbox.org/api/compile.json", { compiler, code, stdin: stdinArea.value }));
-          const out = [res.compiler_error, res.program_output, res.program_error].filter(Boolean).join("\n").trim();
-          codeOutput.textContent = out || "(no output)";
-          if (res.status && res.status !== "0") codeOutput.classList.add("err");
-        } catch (e) {
-          codeOutput.textContent = "Couldn't run the code. Check your internet connection.\n" + (e && e.message ? e.message : "");
-          codeOutput.classList.add("err");
-        }
+        const res = await runOnWandbox(lang, codeArea.value, stdinArea.value);
+        codeOutput.textContent = res.out;
+        if (res.failed) codeOutput.classList.add("err");
         runBtn.disabled = false;
       }
       body.addEventListener("click", (e) => {
@@ -4366,19 +4577,22 @@
       // ----- the Insert menu -----
       function insertMenu(anchor) {
         closeMenu();
-        const item = (icon, label, fn) => el("button", { class: "sl-choice sl-action sl-ins", onmousedown: (e) => e.preventDefault(), onclick: () => { closeMenu(); fn(); } }, svg(icon, 15), label);
-        menu = el("div", { class: "sl-menu sl-choices", role: "menu", "aria-label": "Insert" },
+        const tile = (icon, title, hint, fn) => el("button", {
+          class: "sl-ins-tile", role: "menuitem", onmousedown: (e) => e.preventDefault(), onclick: () => { closeMenu(); fn(); },
+        }, el("span", { class: "sl-ins-icon" }, svg(icon, 20)), el("span", { class: "sl-ins-title", text: title }), el("span", { class: "sl-ins-hint", text: hint }));
+        menu = el("div", { class: "sl-menu sl-ins-menu", role: "menu", "aria-label": "Insert" },
           el("span", { class: "sl-choice-head", text: "INSERT" }),
-          item(ICON.image, "Picture from a file", () => { saveSel(); filePick.click(); }),
-          item(ICON.camera, "Take a photo", takePhoto),
-          item(ICON.code, "Code block (run C++, Java, Python…)", insertCodeBlock),
-          item(ICON.omega, "Symbol or equation", () => toggleChars(true)),
-          item(ICON.hr, "Divider line", () => run("insertHorizontalRule")),
-          item(ICON.pages, "Page break", insertPageBreak),
-          item(ICON.mic, "Lecture recording", startRecording),
-          item(ICON.image, "Screenshot (press Win+Shift+S, then Ctrl+V here)", () => showToast("Press Win+Shift+S to snip any part of your screen, then press Ctrl+V in your doc to paste it.", () => {})));
+          el("div", { class: "sl-ins-grid" },
+            tile(ICON.image, "Picture", "From a file, or paste one", () => { saveSel(); filePick.click(); }),
+            tile(ICON.camera, "Photo", "Use the camera", takePhoto),
+            tile(ICON.screenshot, "Screenshot", "Win+Shift+S, then Ctrl+V", () => showToast("Press Win+Shift+S and drag over any part of your screen, then press Ctrl+V in your doc to paste it.", () => {})),
+            tile(ICON.omega, "Symbol", "α  √  H₂O  equations", () => toggleChars(true)),
+            tile(ICON.sticker, "Sticker", "Cute stickers, or your own", () => { toggleDraw(true); setTimeout(() => { const b2 = tray.querySelector('[aria-label="Stickers"]'); if (b2) b2.click(); }, 30); }),
+            tile(ICON.mic, "Recording", "Record a lecture", startRecording),
+            tile(ICON.hr, "Divider", "A line across the page", () => run("insertHorizontalRule")),
+            tile(ICON.pages, "Page break", "Start a new page", insertPageBreak)));
         root.append(menu);
-        placeMenu(anchor, 280, 330);
+        placeMenu(anchor, 340, 330);
       }
       const insertBtn = tool(ICON.insert, "Insert", (b) => insertMenu(b), null);
       const calcBtn = tool(ICON.calc, "Calculator", () => toggleCalc(), null, "Alt+=");
@@ -4490,14 +4704,19 @@
         // New lines become proper paragraphs.
         try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
       });
-      body.addEventListener("input", (e) => { closeImgBar(); autoSymbol(e); syncBody(); buildOutline(); closePop(); later(); laterSnap(); });
+      body.addEventListener("input", (e) => {
+        // Text typed straight into an empty doc becomes a proper paragraph.
+        if (Array.from(body.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim())) {
+          try { document.execCommand("formatBlock", false, "p"); } catch (err) {}
+        }
+        closeImgBar(); autoSymbol(e); syncBody(); buildOutline(); closePop(); later(); laterSnap(); });
       body.addEventListener("blur", saveSel);
       body.addEventListener("paste", (e) => {
         // Keep simple formatting from the clipboard, drop everything else.
         e.preventDefault();
         if (e.clipboardData.files && e.clipboardData.files.length) {
           const hasImage = Array.from(e.clipboardData.files).some((f) => /^image\//.test(f.type));
-          if (hasImage) { insertImages(e.clipboardData.files); return; }
+          if (hasImage) { insertImages(e.clipboardData.files, pictureSource(e.clipboardData)); return; }
         }
         const html = e.clipboardData.getData("text/html");
         try { document.execCommand("styleWithCSS", false, false); } catch (err) {}
@@ -4509,7 +4728,12 @@
       });
       body.addEventListener("click", (e) => {
         // Never let a link replace the app page.
-        if (e.target.closest("a")) e.preventDefault();
+        const a = e.target.closest("a");
+        if (a) {
+          e.preventDefault();
+          if (e.ctrlKey || e.metaKey) openLink(a.getAttribute("href"));
+          else updateStatus("Ctrl+click to open the link");
+        }
         setTimeout(maybePop, 0);
       });
       body.addEventListener("keyup", (e) => { if (e.key.startsWith("Arrow")) maybePop(); });
@@ -4568,13 +4792,28 @@
       window.addEventListener("afterprint", after);
       cleanups.push(() => { ro.disconnect(); window.removeEventListener("beforeprint", before); window.removeEventListener("afterprint", after); });
 
+      // Paper (templates) also gets a label, so it's easy to find.
+      const paperBtn = tools.querySelector('[aria-label="Page setup: layout, paper, colour"]');
+      if (paperBtn) {
+        paperBtn.classList.add("sl-label-btn");
+        paperBtn.firstChild.replaceWith(svg(ICON.paper, 16));
+        paperBtn.append(el("span", { class: "sl-draw-label", text: "Paper" }));
+      }
+      // The pen sits in the middle of the toolbar, with a label, so it's easy to find.
+      const alignAnchor = tools.querySelector('[aria-label="Align left"]');
+      if (alignAnchor) {
+        drawBtn.classList.add("sl-draw-btn");
+        drawBtn.append(el("span", { class: "sl-draw-label", text: "Draw" }));
+        tools.insertBefore(drawBtn, alignAnchor);
+        tools.insertBefore(el("span", { class: "sl-tool-sep", "aria-hidden": "true" }), alignAnchor);
+      }
       // Print, history and shortcuts sit beside Export so the formatting bar fits on one line.
       for (const label of ["Keyboard shortcuts", "Print or save as PDF", "Version history"]) {
         const b = tools.querySelector('[aria-label="' + label + '"]');
         if (b) headRight.insertBefore(b, exportBtn.nextSibling);
       }
       tools.querySelectorAll(".sl-tool-sep + .sl-tool-sep, .sl-tool-sep:last-child").forEach((x) => x.remove());
-      page.addEventListener("wheel", onWheelZoom, { passive: false });
+      // (Pinch and Ctrl + scroll zoom the whole window, like Chrome.)
       // While drawing nothing has keyboard focus, so listen on the whole window too.
       const winKeys = (e) => {
         const a = document.activeElement;
@@ -4601,6 +4840,7 @@
       cleanups.push(() => ro2.disconnect());
       applyPaper();
       renderAllCode();
+      body.querySelectorAll("img[data-src]").forEach((i) => { i.title = "Ctrl+click to open where this picture came from"; });
       drawShelf();
       updateStatus();
       buildOutline();
@@ -4636,7 +4876,7 @@
       if (view.doc === note.id) view.doc = null;
       save();
       render();
-      showToast("“" + (note.title || (note.type === "agenda" ? "Agenda" : "Doc")) + "” was deleted.", () => {
+      showToast("“" + (note.title || (note.type === "agenda" ? "Agenda" : note.type === "code" ? "Code" : "Doc")) + "” was deleted.", () => {
         data.notes.splice(Math.min(index, data.notes.length), 0, note);
         save();
         render();
@@ -4845,7 +5085,7 @@
     // A full copy of every note, saved as one file you can keep anywhere.
     async function backupAll() {
       const stamp = new Date().toISOString().slice(0, 10);
-      await saveFile("StillLife backup " + stamp + ".json", JSON.stringify(data, null, 1), "application/json");
+      await saveFile("StillLife backup " + stamp + ".json", JSON.stringify(Object.assign({}, data, { study: studyData() }), null, 1), "application/json");
     }
     async function restoreBackup(file) {
       let incoming;
@@ -4881,6 +5121,566 @@
         e.preventDefault();
         importFiles(e.dataTransfer.files);
       });
+    }
+
+    // ---------- Study: a timer like YPT, and groups that keep each other studying ----------
+    const SUBJECT_COLORS = ["#b7c2ae", "#a9b7c2", "#d3b5af", "#dccdb5", "#bdb3c4", "#c9a88f", "#c4cfc6", "#c9c1e6"];
+    // Study data lives in its own store, written only by the full window, so the island
+    // (which has its own copy of the notes) can never stop a running timer by saving.
+    let studyStore = null;
+    let studySaveTimer = 0;
+    function saveStudy() {
+      clearTimeout(studySaveTimer);
+      studySaveTimer = setTimeout(() => { try { localStorage.setItem("stilllife-study", JSON.stringify(studyStore)); } catch (e) {} }, 200);
+    }
+    function studyData() {
+      if (!studyStore) {
+        try { studyStore = JSON.parse(localStorage.getItem("stilllife-study") || "null"); } catch (e) { studyStore = null; }
+        if (!studyStore || typeof studyStore !== "object") studyStore = {};
+      }
+      const st = studyStore;
+      if (!st.me) st.me = { id: uid() + uid() };
+      if (!Array.isArray(st.subjects) || !st.subjects.length) st.subjects = [{ id: "s1", name: "General", color: "#a9b7c2" }];
+      if (!Array.isArray(st.sessions)) st.sessions = [];
+      if (!Array.isArray(st.groups)) st.groups = [];
+      if (st.goalMin === undefined) st.goalMin = 180;
+      if (st.strict === undefined) st.strict = true;
+      return st;
+    }
+    const dayKey = (t) => { const d = new Date(t); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
+    function studiedOn(key, subjectId) {
+      const st = studyData();
+      let total = 0;
+      for (const s of st.sessions) if (dayKey(s.a) === key && (!subjectId || s.s === subjectId)) total += s.b - s.a;
+      if (st.running && dayKey(st.running.a) === key && (!subjectId || st.running.s === subjectId)) total += Date.now() - st.running.a;
+      return total;
+    }
+    const todayTotal = (sid) => studiedOn(dayKey(Date.now()), sid);
+    const hms = (ms) => {
+      const s2 = Math.max(0, Math.floor(ms / 1000));
+      return Math.floor(s2 / 3600) + ":" + String(Math.floor((s2 % 3600) / 60)).padStart(2, "0") + ":" + String(s2 % 60).padStart(2, "0");
+    };
+    const hm = (ms) => { const m = Math.round(ms / 60000); return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + "m"; };
+    const subjectOf = (id) => studyData().subjects.find((x) => x.id === id) || studyData().subjects[0];
+
+    let away = null; // when StillLife stopped being looked at during a study session
+    function startStudy(subjectId) {
+      const st = studyData();
+      if (st.running) stopStudy(true);
+      st.running = { s: subjectId || st.lastSubject || st.subjects[0].id, a: Date.now() };
+      st.lastSubject = st.running.s;
+      saveStudy();
+      broadcast();
+      if (view.study) render(); else drawStudyBits();
+    }
+    function stopStudy(quiet) {
+      const st = studyData();
+      if (!st.running) return;
+      const b = Date.now();
+      if (b - st.running.a > 5000) st.sessions.push({ id: uid(), s: st.running.s, a: st.running.a, b });
+      if (st.sessions.length > 4000) st.sessions.splice(0, st.sessions.length - 4000);
+      st.running = null;
+      away = null;
+      saveStudy();
+      if (!quiet) { broadcast(); if (view.study) render(); else drawStudyBits(); }
+    }
+
+    // ----- groups -----
+    const groupLinks = new Map(); // code -> { session, members: Map, conn }
+    function myStatus() {
+      const st = studyData();
+      const r = st.running;
+      return {
+        name: st.name || "Me",
+        state: r ? (away ? "away" : "studying") : "idle",
+        subject: r ? subjectOf(r.s).name : "",
+        color: r ? subjectOf(r.s).color : "",
+        since: r ? r.a : 0,
+        awaySince: away || 0,
+        today: todayTotal(),
+        goalMin: st.goalMin,
+      };
+    }
+    function broadcast() {
+      for (const [code, link] of groupLinks) {
+        const g = studyData().groups.find((x) => x.code === code);
+        link.session.setStatus(Object.assign(myStatus(), { group: g ? g.name : "" }));
+      }
+    }
+    function connectGroup(g) {
+      if (groupLinks.has(g.code) || !window.SLGroup) return;
+      const code0 = g.code;
+      const st = studyData();
+      const link = { members: new Map(), conn: "connecting" };
+      link.session = window.SLGroup.join({
+        code: g.code,
+        me: { id: st.me.id, name: st.name || "Me" },
+        relays: window.SL_TEST_RELAYS,
+        onEvent: (type, d) => {
+          g = studyData().groups.find((x) => x.code === code0) || g;
+          if (type === "connection") { link.conn = d.state; if (d.state === "online") broadcast(); drawGroupPanel(); return; }
+          if (type === "presence") {
+            link.members.set(d.id, d);
+            if (d.group && !g.name) { g.name = d.group; saveStudy(); }
+            drawGroupPanel();
+          } else if (type === "gone") { link.members.delete(d.id); drawGroupPanel(); }
+          else if (type === "chat") {
+            g.chat = g.chat || [];
+            if (g.chat.some((m) => m.mid === d.mid) || (g.hidden || []).includes(d.mid)) return;
+            g.chat.push({ mid: d.mid, id: d.id, name: d.name, text: d.text, t: d.t, kind: d.kind });
+            g.chat.sort((a, b) => a.t - b.t);
+            if (g.chat.length > 300) g.chat.splice(0, g.chat.length - 300);
+            if (!d.old && d.id !== st.me.id) g.unread = (g.unread || 0) + (view.study && studyView.group === g.code ? 0 : 1);
+            saveStudy();
+            drawGroupPanel();
+          } else if (type === "nudge") {
+            g.chat = g.chat || [];
+            g.chat.push({ mid: "n" + d.t + d.from, id: d.from, name: d.name, text: d.text, t: d.t, kind: "nudge" });
+            saveStudy();
+            showNotice("🔔 " + d.name + ": " + d.text, "Start studying", () => { if (!studyData().running) startStudy(); view.study = true; render(); });
+            drawGroupPanel();
+          }
+        },
+      });
+      link.session.seedHistory((g.chat || []).filter((m) => m.id === st.me.id && m.kind !== "nudge"));
+      groupLinks.set(g.code, link);
+    }
+    function connectAllGroups() { if (opts.full) for (const g of studyData().groups) connectGroup(g); }
+    async function leaveGroup(g, forget) {
+      const link = groupLinks.get(g.code);
+      if (link) await link.session.leave(forget);
+      groupLinks.delete(g.code);
+      const st = studyData();
+      st.groups = st.groups.filter((x) => x !== g);
+      if (studyView.group === g.code) studyView.group = st.groups[0] ? st.groups[0].code : null;
+      saveStudy();
+      render();
+    }
+    // Keep everyone up to date, and notice when you wander off during a session.
+    if (opts.full) {
+      setInterval(() => { if (groupLinks.size) broadcast(); }, 60000);
+      setInterval(() => drawStudyBits(), 1000);
+      const looking = () => !document.hidden && document.hasFocus();
+      let awayTimer = 0;
+      const check = () => {
+        const st = studyData();
+        clearTimeout(awayTimer);
+        if (!st.running || !st.strict) return;
+        if (!looking()) {
+          awayTimer = setTimeout(() => { if (!looking() && studyData().running) { away = Date.now() - 60000; broadcast(); } }, 60000);
+        } else if (away) {
+          const mins = Math.round((Date.now() - away) / 60000);
+          away = null;
+          broadcast();
+          showNotice("Welcome back. You were away from StillLife for " + mins + " min, and your group could see it.");
+        }
+      };
+      window.addEventListener("blur", check);
+      window.addEventListener("focus", check);
+      document.addEventListener("visibilitychange", check);
+    }
+
+    // ----- the study page -----
+    const studyView = { group: null, form: null };
+    let studyEls = null; // live parts redrawn every second
+    function ring(pct) {
+      const r = 92;
+      const c = 2 * Math.PI * r;
+      const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      s.setAttribute("viewBox", "0 0 220 220");
+      s.setAttribute("class", "sl-ring");
+      s.innerHTML = '<circle cx="110" cy="110" r="' + r + '" fill="none" stroke="rgba(47,46,43,0.08)" stroke-width="14"/>' +
+        '<circle class="sl-ring-fill" cx="110" cy="110" r="' + r + '" fill="none" stroke="#7d6c96" stroke-width="14" stroke-linecap="round" ' +
+        'stroke-dasharray="' + c + '" stroke-dashoffset="' + c * (1 - Math.min(1, pct)) + '" transform="rotate(-90 110 110)"/>';
+      return s;
+    }
+    function studyPage() {
+      const st = studyData();
+      if (!studyView.group && st.groups[0]) studyView.group = st.groups[0].code;
+      const timeBig = el("div", { class: "sl-study-big" });
+      const timeSub = el("div", { class: "sl-study-sub" });
+      const ringBox = el("div", { class: "sl-ring-box" }, ring(0), el("div", { class: "sl-ring-text" }, timeBig, timeSub));
+      const startBtn = el("button", { class: "sl-study-go", onclick: () => (studyData().running ? stopStudy() : startStudy()) });
+      const subjects = el("div", { class: "sl-subjects" });
+      for (const sub of st.subjects) {
+        const on = st.running ? st.running.s === sub.id : (st.lastSubject || st.subjects[0].id) === sub.id;
+        subjects.append(el("span", { class: "sl-del-wrap" },
+          el("button", {
+            class: "sl-subject" + (on ? " on" : ""), style: "--sc:" + sub.color,
+            onclick: () => { if (st.running) startStudy(sub.id); else { st.lastSubject = sub.id; saveStudy(); render(); } },
+          }, el("span", { class: "sl-subject-dot" }), sub.name, el("span", { class: "sl-subject-time", "data-sub": sub.id })),
+          st.subjects.length > 1 ? el("button", { class: "sl-del-x corner", title: "Delete subject", "aria-label": "Delete subject " + sub.name, onclick: () => {
+            st.subjects = st.subjects.filter((x) => x !== sub);
+            if (st.running && st.running.s === sub.id) stopStudy(true);
+            saveStudy();
+            render();
+          } }, svg(ICON.x, 9)) : null));
+      }
+      const addInput = el("input", { class: "sl-subject-input", placeholder: "+ Subject", "aria-label": "Add a subject",
+        onkeydown: (e) => {
+          if (e.key === "Enter" && addInput.value.trim()) {
+            st.subjects.push({ id: uid(), name: addInput.value.trim().slice(0, 24), color: SUBJECT_COLORS[st.subjects.length % SUBJECT_COLORS.length] });
+            saveStudy();
+            render();
+          }
+        } });
+      subjects.append(addInput);
+      const goal = dropdown({
+        label: "Daily goal", value: st.goalMin,
+        options: [30, 60, 90, 120, 180, 240, 300, 360, 480, 600].map((m) => ({ value: m, text: hm(m * 60000) + " a day" })),
+        onPick: (v) => { st.goalMin = v; saveStudy(); broadcast(); drawStudyBits(); },
+      });
+      const strict = el("label", { class: "sl-switch" },
+        el("input", { type: "checkbox", checked: st.strict, onchange: (e) => { st.strict = e.target.checked; saveStudy(); } }),
+        el("span", { class: "sl-switch-track", "aria-hidden": "true" }, el("span", { class: "sl-switch-knob" })));
+      const nameInput = el("input", { class: "sl-study-name", value: st.name || "", placeholder: "Your name", "aria-label": "Your name in groups",
+        onchange: (e) => { st.name = e.target.value.trim().slice(0, 30); saveStudy(); broadcast(); } });
+      // week chart
+      const week = el("div", { class: "sl-week" });
+      const days = [];
+      for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d); }
+      const totals = days.map((d) => studiedOn(dayKey(d.getTime())));
+      const max = Math.max(st.goalMin * 60000, ...totals);
+      days.forEach((d, i) => {
+        week.append(el("div", { class: "sl-week-col", title: hm(totals[i]) },
+          el("span", { class: "sl-week-val", text: totals[i] ? hm(totals[i]) : "" }),
+          el("span", { class: "sl-week-bar" + (i === 6 ? " today" : ""), style: "height:" + Math.max(3, (totals[i] / max) * 100) + "%" }),
+          el("span", { class: "sl-week-day", text: i === 6 ? "Today" : d.toLocaleDateString(undefined, { weekday: "short" }) })));
+      });
+      // today's sessions (each can be deleted)
+      const list = el("div", { class: "sl-sessions" });
+      const todays = st.sessions.filter((s) => dayKey(s.a) === dayKey(Date.now())).slice().reverse();
+      if (!todays.length) list.append(el("p", { class: "sl-g-note", text: "Sessions you finish today appear here." }));
+      for (const s of todays) {
+        const sub = subjectOf(s.s);
+        const t = (x) => new Date(x).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        list.append(el("div", { class: "sl-session" },
+          el("span", { class: "sl-subject-dot", style: "background:" + sub.color }),
+          el("span", { class: "sl-session-name", text: sub.name }),
+          el("span", { class: "sl-session-when", text: t(s.a) + " – " + t(s.b) }),
+          el("b", { text: hm(s.b - s.a) }),
+          el("button", { class: "sl-del-x", title: "Delete this session", "aria-label": "Delete this session", onclick: () => { st.sessions = st.sessions.filter((x) => x !== s); saveStudy(); broadcast(); render(); } }, svg(ICON.x, 10))));
+      }
+      const left = el("section", { class: "sl-study-card" },
+        el("div", { class: "sl-study-head" }, el("h2", { text: "Study" }), nameInput),
+        subjects, ringBox, startBtn,
+        el("div", { class: "sl-set-row" }, el("div", { class: "sl-set-text" }, el("span", { class: "sl-set-label", text: "Daily goal" })), goal.el),
+        el("div", { class: "sl-set-row" },
+          el("div", { class: "sl-set-text" }, el("span", { class: "sl-set-label", text: "Strict mode" }), el("span", { class: "sl-set-hint", text: "While your timer runs, your group sees if you leave StillLife for over a minute." })),
+          strict),
+        el("span", { class: "sl-choice-head", text: "THIS WEEK" }), week,
+        el("span", { class: "sl-choice-head", text: "TODAY'S SESSIONS" }), list);
+      const right = el("section", { class: "sl-study-card sl-group-card" });
+      studyEls = { timeBig, timeSub, ringBox, startBtn, subjects, right };
+      const pageEl = el("div", { class: "sl-study" }, left, right);
+      drawGroupPanel();
+      drawStudyBits();
+      return pageEl;
+    }
+    // The parts that change every second.
+    function drawStudyBits() {
+      const st = studyData();
+      drawTimerChip();
+      if (!studyEls) return;
+      const total = todayTotal();
+      studyEls.timeBig.textContent = hms(total);
+      studyEls.timeSub.textContent = st.running ? subjectOf(st.running.s).name + " · " + hms(Date.now() - st.running.a) : "Today · goal " + hm(st.goalMin * 60000);
+      studyEls.ringBox.querySelector("svg").replaceWith(ring(total / (st.goalMin * 60000)));
+      studyEls.startBtn.textContent = st.running ? "Stop" : "Start studying";
+      studyEls.startBtn.classList.toggle("stop", !!st.running);
+      studyEls.subjects.querySelectorAll("[data-sub]").forEach((x) => { const v = todayTotal(x.dataset.sub); x.textContent = v ? hm(v) : ""; });
+      studyEls.right.querySelectorAll("[data-live]").forEach((x) => {
+        const m = JSON.parse(x.dataset.live);
+        x.textContent = m.state === "studying" ? hms(Date.now() - m.since) : m.state === "away" ? Math.max(1, Math.round((Date.now() - m.awaySince) / 60000)) + " min away" : "";
+      });
+      studyEls.right.querySelectorAll("[data-today]").forEach((x) => {
+        const m = JSON.parse(x.dataset.today);
+        x.textContent = hm(m.today + (m.state === "studying" || m.state === "away" ? Date.now() - m.t : 0));
+      });
+    }
+    function memberToday(m) { return m.today + (m.state === "studying" || m.state === "away" ? Date.now() - m.t : 0); }
+    function drawGroupPanel() {
+      if (!studyEls) return;
+      const box = studyEls.right;
+      const st = studyData();
+      const keepScroll = box.querySelector(".sl-chat-list");
+      const chatAtBottom = !keepScroll || keepScroll.scrollTop + keepScroll.clientHeight >= keepScroll.scrollHeight - 30;
+      box.textContent = "";
+      const tabs = el("div", { class: "sl-group-tabs" });
+      for (const g of st.groups) {
+        tabs.append(el("button", { class: "sl-cat" + (studyView.group === g.code ? " on" : ""), onclick: () => { studyView.group = g.code; studyView.form = null; g.unread = 0; drawGroupPanel(); } },
+          g.name || "Group", g.unread ? el("span", { class: "sl-unread", text: String(g.unread) }) : null));
+      }
+      tabs.append(
+        el("button", { class: "sl-cat", onclick: () => { studyView.form = "create"; drawGroupPanel(); } }, "+ Create"),
+        el("button", { class: "sl-cat", onclick: () => { studyView.form = "join"; drawGroupPanel(); } }, "Join"));
+      box.append(el("div", { class: "sl-study-head" }, el("h2", { text: "Study groups" })), tabs);
+      const g = st.groups.find((x) => x.code === studyView.group);
+      if (studyView.form || !g) {
+        const creating = studyView.form === "create" || (!g && studyView.form !== "join");
+        const nameIn = el("input", { class: "sl-form-input", value: st.name || "", placeholder: "Your name (what friends see)", "aria-label": "Your name" });
+        const groupIn = el("input", { class: "sl-form-input", placeholder: creating ? "Group name, e.g. SAT squad" : "Group code, e.g. SL-7KQ2-M9XA-4FDT-HP3N", "aria-label": creating ? "Group name" : "Group code" });
+        const err = el("p", { class: "sl-form-err" });
+        const go = () => {
+          const name = nameIn.value.trim();
+          const v = groupIn.value.trim();
+          if (!name) { err.textContent = "Add your name so friends know who you are."; return; }
+          if (!v) { err.textContent = creating ? "Give your group a name." : "Paste the code your friend shared."; return; }
+          if (!creating && !window.SLGroup.validCode(v)) { err.textContent = "That doesn't look like a StillLife group code."; return; }
+          st.name = name.slice(0, 30);
+          const code = creating ? window.SLGroup.newCode() : v.toUpperCase().replace(/\s/g, "");
+          if (st.groups.some((x) => x.code === code)) { studyView.group = code; studyView.form = null; drawGroupPanel(); return; }
+          const ng = { code, name: creating ? v.slice(0, 40) : "", joined: now(), chat: [] };
+          st.groups.push(ng);
+          studyView.group = code;
+          studyView.form = null;
+          saveStudy();
+          connectGroup(ng);
+          broadcast();
+          render();
+        };
+        groupIn.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+        box.append(el("div", { class: "sl-group-form" },
+          el("h3", { text: creating ? "Create a study group" : "Join a study group" }),
+          el("p", { class: "sl-g-note", text: creating
+            ? "You'll get a code to share with friends. Everyone in the group sees who is studying, for how long today, and can chat and nudge each other."
+            : "Ask a friend for their group's code and paste it here." }),
+          nameIn, groupIn, err,
+          el("div", { class: "sl-row" },
+            g ? el("button", { class: "sl-pill", onclick: () => { studyView.form = null; drawGroupPanel(); }, text: "Cancel" }) : null,
+            el("button", { class: "sl-pill dark", onclick: go, text: creating ? "Create group" : "Join group" })),
+          el("p", { class: "sl-g-note", text: "Messages go through a free public relay (HiveMQ or Mosquitto) but are encrypted with the group code first, so only people with the code can read them. Only share the code with people you trust." })));
+        return;
+      }
+      const link = groupLinks.get(g.code);
+      const conn = link ? link.conn : "offline";
+      const copyBtn = el("button", { class: "sl-pill", onclick: () => { if (navigator.clipboard) navigator.clipboard.writeText(g.code); copyBtn.textContent = "Copied"; setTimeout(() => { copyBtn.textContent = "Copy code"; }, 1500); }, text: "Copy code" });
+      box.append(el("div", { class: "sl-group-info" },
+        el("div", null, el("h3", { text: g.name || "Study group" }), el("span", { class: "sl-group-code", text: g.code })),
+        el("div", { class: "sl-row" }, copyBtn,
+          el("button", { class: "sl-pill", onclick: (e) => {
+            closeMenu();
+            menu = el("div", { class: "sl-menu sl-choices", role: "menu" },
+              el("button", { class: "sl-choice sl-action", onclick: () => { closeMenu(); leaveGroup(g, false); } }, "Leave group"),
+              el("button", { class: "sl-choice sl-action", onclick: () => { closeMenu(); leaveGroup(g, true); } }, "Leave and remove my messages"),
+              el("button", { class: "sl-choice sl-action", onclick: () => { closeMenu(); g.chat = []; saveStudy(); drawGroupPanel(); } }, "Clear chat on this computer"));
+            root.append(menu);
+            placeMenu(e.currentTarget, 260, 130);
+          }, text: "…" }))),
+        el("span", { class: "sl-conn " + conn, text: conn === "online" ? "Connected · end-to-end encrypted" : conn === "connecting" ? "Connecting…" : "Offline · trying again" }));
+      // members, ranked by today's study time
+      const members = link ? Array.from(link.members.values()).filter((m) => m.state !== undefined) : [];
+      const meNow = Object.assign({ id: st.me.id }, myStatus(), { t: Date.now() });
+      const all = members.filter((m) => m.id !== st.me.id).concat([meNow]);
+      all.sort((a, b) => memberToday(b) - memberToday(a));
+      const list = el("div", { class: "sl-members" });
+      all.forEach((m, i) => {
+        const stale = m.state !== "offline" && m.id !== st.me.id && Date.now() - m.t > 180000;
+        const state = stale ? "offline" : m.state;
+        const label = state === "studying" ? "Studying " + (m.subject || "") : state === "away" ? "Left StillLife while studying" : state === "offline" ? "Offline" : "Not studying";
+        const medal = ["🥇", "🥈", "🥉"][i] || String(i + 1);
+        list.append(el("div", { class: "sl-member st-" + state + (m.id === st.me.id ? " me" : "") },
+          el("span", { class: "sl-rank", text: medal }),
+          el("span", { class: "sl-avatar", style: "background:" + (m.color || "#dccdb5"), text: (m.name || "?").trim().slice(0, 1).toUpperCase() }),
+          el("div", { class: "sl-member-text" },
+            el("span", { class: "sl-member-name", text: (m.name || "Someone") + (m.id === st.me.id ? " (you)" : "") }),
+            el("span", { class: "sl-member-state" }, el("span", { class: "sl-state-dot" }), label + " ",
+              el("span", { class: "sl-live", "data-live": JSON.stringify({ state, since: m.since, awaySince: m.awaySince || m.t }) }))),
+          el("div", { class: "sl-member-today" }, el("b", { "data-today": JSON.stringify({ today: m.today || 0, state, t: m.t }) }), el("span", { text: "today" })),
+          m.id !== st.me.id && link ? el("button", { class: "sl-tool", title: "Nudge " + m.name, "aria-label": "Nudge " + m.name, onclick: (e) => {
+            closeMenu();
+            const pick = (text) => { closeMenu(); link.session.nudge(m.id, text); showNotice("Nudged " + m.name + "."); };
+            menu = el("div", { class: "sl-menu sl-choices", role: "menu", "aria-label": "Nudge" },
+              el("span", { class: "sl-choice-head", text: "NUDGE " + (m.name || "").toUpperCase() }),
+              ...["Time to focus! ✏️", "Come study with me 📚", "You've got this 💪", "Break's over ⏰", "Great work today 🌟"].map((t) =>
+                el("button", { class: "sl-choice sl-action", onclick: () => pick(t) }, t)));
+            root.append(menu);
+            placeMenu(e.currentTarget, 240, 230);
+          } }, svg(ICON.bell, 15)) : null));
+      });
+      if (all.length === 1) list.append(el("p", { class: "sl-g-note", text: "Share the code so friends can join. They'll show up here." }));
+      box.append(el("span", { class: "sl-choice-head", text: "MEMBERS · RANKED BY TODAY" }), list);
+      // chat
+      const chatList = el("div", { class: "sl-chat-list" });
+      for (const m of g.chat || []) {
+        const mine = m.id === st.me.id;
+        const time = new Date(m.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        if (m.kind === "nudge") {
+          chatList.append(el("div", { class: "sl-chat-sys" }, "🔔 " + m.name + " nudged you: " + m.text + " · " + time));
+          continue;
+        }
+        chatList.append(el("div", { class: "sl-msg" + (mine ? " mine" : "") },
+          el("div", { class: "sl-msg-bubble" },
+            mine ? null : el("span", { class: "sl-msg-name", text: m.name }),
+            el("span", { class: "sl-msg-text", text: m.text }),
+            el("span", { class: "sl-msg-time", text: time })),
+          el("button", { class: "sl-del-x", title: "Delete for me", "aria-label": "Delete message for me", onclick: () => {
+            g.chat = g.chat.filter((x) => x !== m);
+            g.hidden = (g.hidden || []).concat([m.mid]).slice(-500);
+            saveStudy();
+            drawGroupPanel();
+          } }, svg(ICON.x, 9))));
+      }
+      if (!(g.chat || []).length) chatList.append(el("p", { class: "sl-g-note", text: "Say hi to your group. Messages are end-to-end encrypted." }));
+      const chatIn = el("input", { class: "sl-chat-input", placeholder: "Message " + (g.name || "the group"), "aria-label": "Message",
+        onkeydown: (e) => { if (e.key === "Enter") send(); } });
+      async function send() {
+        const text = chatIn.value.trim();
+        if (!text || !link) return;
+        chatIn.value = "";
+        const m = await link.session.sendChat(text);
+        if (m) {
+          g.chat = g.chat || [];
+          if (!g.chat.some((x) => x.mid === m.mid)) g.chat.push(m);
+          saveStudy();
+          drawGroupPanel();
+          const again = studyEls && studyEls.right.querySelector(".sl-chat-input");
+          if (again) again.focus();
+        } else showNotice("Not connected right now. Try again in a moment.");
+      }
+      box.append(el("span", { class: "sl-choice-head", text: "CHAT" }), chatList,
+        el("div", { class: "sl-chat-send" }, chatIn, el("button", { class: "sl-pill dark", onclick: send }, svg(ICON.send, 13), "Send")));
+      chatList.scrollTop = chatAtBottom ? chatList.scrollHeight : (keepScroll ? keepScroll.scrollTop : 0);
+      drawStudyBits();
+    }
+    // A small running timer shown anywhere in the app while you study.
+    let chip = null;
+    function drawTimerChip() {
+      const st = opts.full ? studyData() : null;
+      const show = opts.full && st && st.running && !view.study;
+      if (!show) { if (chip) { chip.remove(); chip = null; } return; }
+      if (!chip) {
+        chip = el("button", { class: "sl-timer-chip", title: "Open Study", onclick: () => { view.study = true; view.doc = null; render(); } });
+        document.body.append(chip);
+      }
+      const sub = subjectOf(st.running.s);
+      chip.textContent = "";
+      chip.append(el("span", { class: "sl-subject-dot", style: "background:" + sub.color }), (away ? "Away · " : "") + sub.name + " " + hms(Date.now() - st.running.a));
+    }
+
+    // ---------- Code notes: write and run code in many languages (like OneCompiler) ----------
+    const CODE_EXT = { python: "py", cpp: "cpp", c: "c", java: "java", javascript: "js", csharp: "cs", go: "go", rust: "rs", ruby: "rb", php: "php", swift: "swift", typescript: "ts", bash: "sh" };
+    const langName = (k) => (CODE_LANGS.find((x) => x[0] === k) || [k, k])[1];
+    function codeCard(note) {
+      const c = el("article", {
+        class: "sl-card sl-code-card c-" + (note.color || "mist") + (note.resolved ? " archived" : ""),
+        "data-id": note.id, tabindex: "0", "aria-label": "Open code " + (note.title || "Untitled code"),
+        onclick: (e) => { if (!e.target.closest("button")) openDoc(note.id); },
+        onkeydown: (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === c) { e.preventDefault(); openDoc(note.id); } },
+      });
+      const head = el("div", { class: "sl-head" }, svg(ICON.code, 13), el("span", { class: "sl-title sl-title-static", text: note.title || "Untitled code" }));
+      if (!note.resolved) headButtons(note, head);
+      const pre = el("pre", { class: "sl-code-preview" });
+      pre.innerHTML = window.SLTools.highlight((note.code || "").split("\n").slice(0, 8).join("\n"), note.lang || "python");
+      c.append(head, pre, el("div", { class: "sl-foot" }, el("span", { class: "sl-chip", text: langName(note.lang || "python") }), el("span", { class: "sl-chip", text: ago(note.edited || note.created) })));
+      return c;
+    }
+    function codePage(note) {
+      const lang = () => note.lang || "python";
+      const headRight = el("div", { class: "sl-group" });
+      headButtons(note, headRight);
+      const titleIn = el("input", { class: "sl-code-title", value: note.title || "", placeholder: "Untitled code", "aria-label": "Code title",
+        oninput: (e) => { note.title = e.target.value; touch(note); } });
+      const runBtn = el("button", { class: "sl-new sl-run", title: "Run (Ctrl+Enter)", onclick: () => run() }, svg(ICON.play, 13), "Run");
+      const langDd = dropdown({
+        label: "Language", value: lang(), options: CODE_LANGS.map(([v, t]) => ({ value: v, text: t })),
+        onPick: (v) => {
+          const wasStarter = !note.code || !note.code.trim() || Object.values(STARTER).includes(note.code);
+          note.lang = v;
+          data.settings.codeLang = v;
+          if (wasStarter) { note.code = STARTER[v] || ""; ta.value = note.code; }
+          touch(note);
+          paint();
+        },
+      });
+      const saveBtn = el("button", { class: "sl-new alt", title: "Save the code as a file", onclick: () => saveFile(fileStem(note.title || "main") + "." + (CODE_EXT[lang()] || "txt"), note.code || "", "text/plain") }, svg(ICON.exportIcon, 13), "Save file");
+      // The editor: a coloured copy of the code sits under a see-through text box.
+      const gutter = el("div", { class: "sl-ed-gutter", "aria-hidden": "true" });
+      const hl = el("pre", { class: "sl-ed-hl", "aria-hidden": "true" });
+      const ta = el("textarea", { class: "sl-ed-ta", spellcheck: "false", autocapitalize: "off", autocomplete: "off", "aria-label": "Code", wrap: "off" });
+      ta.value = note.code || "";
+      function paint() {
+        hl.innerHTML = window.SLTools.highlight(ta.value + "\n", lang());
+        const lines = ta.value.split("\n").length;
+        if (gutter.childElementCount !== lines) {
+          gutter.textContent = "";
+          for (let i = 1; i <= lines; i++) gutter.append(el("span", { text: String(i) }));
+        }
+        syncScroll();
+      }
+      function syncScroll() {
+        hl.scrollTop = ta.scrollTop;
+        hl.scrollLeft = ta.scrollLeft;
+        gutter.scrollTop = ta.scrollTop;
+      }
+      let saveT = 0;
+      ta.addEventListener("input", () => {
+        paint();
+        clearTimeout(saveT);
+        saveT = setTimeout(() => { note.code = ta.value; touch(note); }, 300);
+      });
+      ta.addEventListener("scroll", syncScroll);
+      ta.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); return; }
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const a = ta.selectionStart;
+          const b = ta.selectionEnd;
+          if (a === b && !e.shiftKey) ta.setRangeText("    ", a, b, "end");
+          else {
+            // Indent or outdent every selected line.
+            const start = ta.value.lastIndexOf("\n", a - 1) + 1;
+            const block = ta.value.slice(start, b);
+            const changed = e.shiftKey ? block.replace(/^ {1,4}/gm, "") : block.replace(/^/gm, "    ");
+            ta.setRangeText(changed, start, b, "select");
+          }
+          ta.dispatchEvent(new Event("input"));
+        } else if (e.key === "Enter") {
+          // Keep the indent of the line above, and add one after { or :
+          const a = ta.selectionStart;
+          const lineStart = ta.value.lastIndexOf("\n", a - 1) + 1;
+          const line = ta.value.slice(lineStart, a);
+          let indent = (/^\s*/.exec(line) || [""])[0];
+          if (/[{:([]\s*$/.test(line)) indent += "    ";
+          e.preventDefault();
+          ta.setRangeText("\n" + indent, a, ta.selectionEnd, "end");
+          ta.dispatchEvent(new Event("input"));
+        }
+      });
+      const stdin = el("textarea", { class: "sl-ed-stdin", spellcheck: "false", placeholder: "Input for your program (what it reads with input(), cin, Scanner…)", "aria-label": "Program input",
+        oninput: (e) => { note.stdin = e.target.value; touch(note); } });
+      stdin.value = note.stdin || "";
+      const out = el("pre", { class: "sl-ed-out", "aria-live": "polite" });
+      const outHead = el("span", { class: "sl-ed-outhead", text: "OUTPUT" });
+      out.textContent = note.lastOutput || "Press Run (or Ctrl+Enter) to see what your program prints.";
+      async function run() {
+        note.code = ta.value;
+        touch(note);
+        runBtn.disabled = true;
+        out.className = "sl-ed-out";
+        out.textContent = "Running " + langName(lang()) + "…";
+        const t0 = Date.now();
+        const res = await runOnWandbox(lang(), ta.value, stdin.value);
+        out.textContent = res.out;
+        if (res.failed) out.classList.add("err");
+        outHead.textContent = "OUTPUT · " + ((Date.now() - t0) / 1000).toFixed(1) + " s" + (res.failed ? " · error" : "");
+        note.lastOutput = res.out.slice(0, 4000);
+        touch(note);
+        runBtn.disabled = false;
+      }
+      const page = el("div", { class: "sl-codepage" },
+        el("div", { class: "sl-doc-head" },
+          el("button", { class: "sl-new alt", onclick: closeDoc }, svg(ICON.back, 13), "All notes"),
+          titleIn, langDd.el, runBtn, saveBtn, headRight),
+        el("div", { class: "sl-ed-main" },
+          el("div", { class: "sl-ed" }, gutter, el("div", { class: "sl-ed-stack" }, hl, ta)),
+          el("div", { class: "sl-ed-side" },
+            el("span", { class: "sl-choice-head", text: "INPUT" }), stdin,
+            outHead, out,
+            el("p", { class: "sl-g-note", text: "Code runs on the free Wandbox service (needs internet), never on your computer." }))));
+      paint();
+      if (!note.title) setTimeout(() => titleIn.focus(), 0); else setTimeout(() => ta.focus(), 0);
+      return page;
     }
 
     // ---------- settings ----------
@@ -4981,8 +5781,10 @@
         } else {
           items.append(
             act(ICON.agenda, "New agenda", () => newNote("agenda")),
-            act(ICON.doc, "New doc", () => newNote("doc")),
+            act(ICON.doc, "New doc", () => askTemplate()),
+            act(ICON.code, "New code", () => newNote("code")),
             act(ICON.find, "Search notes", () => { const s2 = root.querySelector(".sl-search-input"); if (s2) s2.focus(); }),
+            act(ICON.timer, "Study", () => { view.study = true; render(); }),
             act(ICON.importIcon, "Import files", () => importPick.click()),
             act(ICON.view, "Settings", () => openSettings()));
         }
@@ -4993,9 +5795,34 @@
       document.addEventListener("mousedown", (e) => { if (open && ball && !ball.contains(e.target)) toggle(false); }, true);
     }
 
+    // Rename a note straight from its tab.
+    function renameDocTab(n, btn) {
+      if (btn.querySelector("input")) return;
+      const before = n.title || "";
+      const input = el("input", { class: "sl-doctab-input", value: before, "aria-label": "Name", placeholder: n.type === "code" ? "Untitled code" : "Untitled doc" });
+      let done = false;
+      const finish = (keep) => {
+        if (done) return;
+        done = true;
+        n.title = keep ? input.value.trim() : before;
+        touch(n);
+        render();
+      };
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") { e.preventDefault(); finish(true); }
+        else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+      });
+      input.addEventListener("blur", () => finish(true));
+      input.addEventListener("click", (e) => e.stopPropagation());
+      btn.replaceWith(input);
+      input.focus();
+      input.select();
+    }
+
     // ---------- tabs for docs that are open at the same time ----------
     function docTabs() {
-      const open = (data.settings.openDocs || []).filter((id) => data.notes.some((n) => n.id === id && n.type === "doc"));
+      const open = (data.settings.openDocs || []).filter((id) => data.notes.some((n) => n.id === id && (n.type === "doc" || n.type === "code")));
       data.settings.openDocs = open;
       if (!opts.full || !open.length) return null;
       const strip = el("div", { class: "sl-doctabs", role: "tablist", "aria-label": "Open docs" });
@@ -5003,7 +5830,11 @@
       for (const id of open) {
         const n = data.notes.find((x) => x.id === id);
         strip.append(el("div", { class: "sl-doctab" + (view.doc === id ? " on" : ""), role: "tab", "aria-selected": view.doc === id ? "true" : "false" },
-          el("button", { class: "sl-doctab-name", onclick: () => { if (view.doc !== id) { view.doc = id; render(); } } }, svg(ICON.doc, 12), n.title || "Untitled doc"),
+          el("button", {
+            class: "sl-doctab-name", title: view.doc === id ? "Click to rename" : "Open (double-click to rename)",
+            onclick: (e) => { if (view.doc !== id) { view.doc = id; render(); } else renameDocTab(n, e.currentTarget); },
+            ondblclick: (e) => renameDocTab(n, e.currentTarget),
+          }, svg(n.type === "code" ? ICON.code : ICON.doc, 12), n.title || (n.type === "code" ? "Untitled code" : "Untitled doc")),
           el("button", { class: "sl-doctab-x", "aria-label": "Close " + (n.title || "doc"), onclick: (e) => {
             e.stopPropagation();
             data.settings.openDocs = open.filter((x) => x !== id);
@@ -5020,6 +5851,7 @@
 
     // ---------- search everything (like iOS) ----------
     function noteText(n) {
+      if (n.type === "code") return langName(n.lang || "python") + " " + (n.code || "");
       if (n.type !== "doc") return (n.items || []).map((i) => i.text).join(" · ");
       if (!Array.isArray(n.tabs) || n.tabs.length < 2) return htmlToText(n.html);
       return n.tabs.map((t) => (t.title || "") + " " + htmlToText(tabHtml(n, t))).join(" · ");
@@ -5047,6 +5879,7 @@
       return node;
     }
     function openResult(n, q) {
+      if (n.type === "code") { openDoc(n.id); return; }
       if (n.type === "doc") {
         if (Array.isArray(n.tabs) && n.tabs.length > 1) {
           const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -5092,9 +5925,9 @@
           onclick: open,
           onkeydown: (e) => { if (e.key === "Enter") open(); },
         },
-          el("span", { class: "sl-result-icon c-" + (h.n.color || "oat") }, svg(h.n.type === "doc" ? ICON.doc : ICON.agenda, 15)),
+          el("span", { class: "sl-result-icon c-" + (h.n.color || "oat") }, svg(h.n.type === "doc" ? ICON.doc : h.n.type === "code" ? ICON.code : ICON.agenda, 15)),
           el("div", { class: "sl-result-text" },
-            markText(el("strong"), h.title || (h.n.type === "doc" ? "Untitled doc" : "Untitled agenda"), words),
+            markText(el("strong"), h.title || (h.n.type === "doc" ? "Untitled doc" : h.n.type === "code" ? "Untitled code" : "Untitled agenda"), words),
             h.text ? markText(el("span", { class: "sl-result-snip" }), snippet(h.text, words), words) : null),
           el("div", { class: "sl-result-meta" },
             h.n.resolved ? el("span", { class: "sl-chip", text: "Resolved" }) : null,
@@ -5115,6 +5948,23 @@
       // A doc is open: show the page instead of the grid.
       const openNote = view.doc && data.notes.find((n) => n.id === view.doc);
       const strip = docTabs();
+      if (view.study && opts.full && !openNote) {
+        if (strip) root.append(strip);
+        root.append(el("div", { class: "sl-bar" },
+          el("button", { class: "sl-new alt", onclick: () => { view.study = false; render(); } }, svg(ICON.back, 13), "All notes")),
+          el("div", { class: "sl-scroll" }, studyPage()));
+        if (toast) root.append(toast);
+        drawTimerChip();
+        return;
+      }
+      studyEls = null;
+      if (openNote && openNote.type === "code") {
+        if (strip) root.append(strip);
+        root.append(codePage(openNote));
+        if (toast) root.append(toast);
+        if (opts.onCounts) opts.onCounts(counts());
+        return;
+      }
       if (openNote) {
         const doc = docPage(openNote);
         if (strip) root.append(strip);
@@ -5127,7 +5977,6 @@
       view.doc = null;
 
       const scroller = el("div", { class: "sl-scroll" });
-      if (opts.full && data.settings.listZoom && data.settings.listZoom !== 1) scroller.style.zoom = String(data.settings.listZoom);
       if (strip) root.append(strip);
       root.append(toolbar(), scroller);
       if (toast) root.append(toast);
@@ -5233,33 +6082,8 @@
       }
     }
     // ----- zoom: a touchpad pinch (or Ctrl + scroll) zooms StillLife's content, never the whole window -----
-    let listZoomSave = 0;
-    function setListZoom(z) {
-      z = Math.round(Math.min(1.8, Math.max(0.6, z)) * 1000) / 1000;
-      data.settings.listZoom = z;
-      const sc = root.querySelector(".sl-scroll");
-      if (sc) sc.style.zoom = String(z);
-      clearTimeout(listZoomSave);
-      listZoomSave = setTimeout(save, 400);
-    }
-    if (opts.full) {
-      window.addEventListener("wheel", (e) => {
-        if (!e.ctrlKey && !e.metaKey) return;
-        e.preventDefault(); // stops the whole app from zooming; the doc page zooms itself
-        if (view.doc || !root.isConnected) return;
-        const f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.004));
-        setListZoom((data.settings.listZoom || 1) * f);
-      }, { passive: false, capture: true });
-      window.addEventListener("keydown", (e) => {
-        if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return;
-        const k = e.key;
-        if (k !== "=" && k !== "+" && k !== "-" && k !== "0") return;
-        e.preventDefault();
-        if (view.doc) return;
-        const z = data.settings.listZoom || 1;
-        setListZoom(k === "0" ? 1 : k === "-" ? z / 1.1 : z * 1.1);
-      });
-    }
+    // Pinch, Ctrl + scroll and Ctrl + = / - / 0 zoom the whole window, like Chrome does
+    // (handled by Windows itself). The zoom menu in a doc zooms just the page.
 
     document.addEventListener("keydown", (e) => {
       // Ctrl+F on the notes list jumps to search (inside a doc it finds text instead).
@@ -5269,7 +6093,8 @@
         return;
       }
       if (e.key !== "Escape") return;
-      if (menu) closeMenu();
+      // One Escape closes one thing: the open menu first.
+      if (menu) { closeMenu(); e.stopImmediatePropagation(); }
       else if (view.focus) { view.focus = null; render(); }
     });
 
@@ -5278,6 +6103,7 @@
       if (window.SLi18n && data.settings.lang === "zh-TW") window.SLi18n.setLanguage("zh-TW", document.body);
       tickClock();
       drawBall();
+      connectAllGroups();
     });
     return { refresh, counts, openDoc };
   }
