@@ -80,6 +80,9 @@
     grammar: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13 15l3 3 5-6"/>',
     keys: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
     chevron: '<path d="M6 9l6 6 6-6"/>',
+    omega: '<path d="M5 20h4v-2a7 7 0 1 1 6 0v2h4"/>',
+    sup: '<path d="M4 8l8 10M12 8l-8 10"/><path d="M15 4.5a2 2 0 1 1 3.5 1.5L15 10h4.5"/>',
+    sub: '<path d="M4 6l8 10M12 6L4 16"/><path d="M15 14.5a2 2 0 1 1 3.5 1.5L15 20h4.5"/>',
     up: '<path d="M6 15l6-6 6 6"/>',
   };
   function todayStr(offsetDays) {
@@ -117,7 +120,7 @@
   // odd links) is stripped. Parsing happens in an inert document, so nothing runs.
   const ALLOWED = {
     P: ["style"], DIV: ["style"], BR: [], H1: ["style"], H2: ["style"], H3: ["style"], B: [], STRONG: [], I: [], EM: [], U: [],
-    S: [], STRIKE: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: ["class"], CODE: [], PRE: [], SPAN: ["style"],
+    S: [], STRIKE: [], SUP: [], SUB: [], UL: [], OL: [], LI: ["style"], BLOCKQUOTE: ["style"], HR: ["class"], CODE: [], PRE: [], SPAN: ["style"],
     FONT: ["color"], A: ["href"],
   };
   const SAFE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]+)$/i;
@@ -401,10 +404,122 @@
     }
     return clean;
   }
+
+  // ---------- special characters and equations ----------
+  const MARK_NAMES = { "́": "acute", "̀": "grave", "̂": "circumflex", "̈": "umlaut", "̃": "tilde", "̧": "cedilla", "̊": "ring" };
+  function accentName(ch) {
+    const d = ch.normalize("NFD");
+    const base = d[0];
+    const mark = MARK_NAMES[d[1]] || "";
+    return (base === base.toUpperCase() ? "capital " : "") + base.toLowerCase() + " " + mark;
+  }
+  const accentItems = Array.from("áéíóúñüÁÉÍÓÚÑÜàâçèêëîïôùûÿÀÂÇÈÊËÎÏÔÙÛäöÄÖãõåÅ").map((c) => [c, accentName(c)])
+    .concat([["¿", "inverted question mark spanish"], ["¡", "inverted exclamation spanish"], ["ß", "sharp s eszett german"],
+      ["æ", "ae ligature"], ["Æ", "capital ae ligature"], ["œ", "oe ligature french"], ["Œ", "capital oe ligature"],
+      ["ø", "o slash"], ["Ø", "capital o slash"], ["«", "left guillemet quote french"], ["»", "right guillemet quote french"]]);
+  const GREEK_NAMES = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu", "nu", "xi", "omicron", "pi", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega"];
+  const greekLower = "αβγδεζηθικλμνξοπρστυφχψω";
+  const greekUpper = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ";
+  const GREEK_LATIN_LOOKALIKE = "ΑΒΕΖΗΙΚΜΝΟΡΤΥΧ"; // capitals that look like Latin letters
+  const greekItems = Array.from(greekLower).map((c, i) => [c, GREEK_NAMES[i]])
+    .concat(Array.from(greekUpper).map((c, i) => [c, "capital " + GREEK_NAMES[i]]).filter((x) => !GREEK_LATIN_LOOKALIKE.includes(x[0])));
+  const SUPS = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ";
+  const SUBS = "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓ";
+  const SUP_FROM = "0123456789+-=()ni";
+  const SUB_FROM = "0123456789+-=()aeox";
+  const SYMBOLS = [
+    { id: "accents", name: "Accents", items: accentItems },
+    { id: "greek", name: "Greek", items: greekItems },
+    { id: "maths", name: "Maths", items: [
+      ["±", "plus minus"], ["×", "times multiply"], ["÷", "divide"], ["−", "minus"], ["≠", "not equal"], ["≈", "approximately"],
+      ["≡", "identical congruent"], ["≤", "less than or equal"], ["≥", "greater than or equal"], ["∞", "infinity"],
+      ["√", "square root"], ["∛", "cube root"], ["∑", "sum sigma"], ["∏", "product"], ["∫", "integral"], ["∬", "double integral"],
+      ["∮", "contour integral"], ["∂", "partial derivative"], ["∇", "nabla del"], ["Δ", "delta change"], ["°", "degree"],
+      ["′", "prime minute"], ["″", "double prime second"], ["π", "pi"], ["∝", "proportional"], ["∠", "angle"], ["⊥", "perpendicular"],
+      ["∥", "parallel"], ["△", "triangle"], ["∴", "therefore"], ["∵", "because"], ["∈", "element of in set"], ["∉", "not element of"],
+      ["⊂", "subset"], ["⊆", "subset or equal"], ["∪", "union"], ["∩", "intersection"], ["∅", "empty set"], ["∀", "for all"],
+      ["∃", "there exists"], ["¬", "not logic"], ["∧", "and logic"], ["∨", "or logic"], ["ℕ", "natural numbers"], ["ℤ", "integers"],
+      ["ℚ", "rational numbers"], ["ℝ", "real numbers"], ["ℂ", "complex numbers"], ["½", "half fraction"], ["⅓", "third fraction"],
+      ["¼", "quarter fraction"], ["¾", "three quarters fraction"], ["⅔", "two thirds fraction"], ["‰", "per mille"], ["·", "dot multiply"],
+      ["∘", "compose ring"], ["⌊", "floor left"], ["⌋", "floor right"], ["⌈", "ceiling left"], ["⌉", "ceiling right"], ["∼", "similar tilde"]] },
+    { id: "scripts", name: "Super / sub", items: Array.from(SUPS).map((c, i) => [c, "superscript power " + SUP_FROM[i]])
+      .concat(Array.from(SUBS).map((c, i) => [c, "subscript " + SUB_FROM[i]])) },
+    { id: "arrows", name: "Arrows", items: [
+      ["→", "right arrow yields"], ["←", "left arrow"], ["↑", "up arrow gas"], ["↓", "down arrow precipitate"], ["↔", "left right arrow"],
+      ["⇒", "implies double arrow"], ["⇐", "double left arrow"], ["⇔", "if and only if"], ["⇌", "equilibrium reversible"],
+      ["⇋", "equilibrium left"], ["↗", "up right arrow increase"], ["↘", "down right arrow decrease"], ["↖", "up left arrow"],
+      ["↙", "down left arrow"], ["⟶", "long right arrow"], ["↦", "maps to"], ["↻", "clockwise"], ["↺", "anticlockwise"]] },
+    { id: "chemistry", name: "Chemistry", items: [
+      ["→", "yields reaction arrow"], ["⇌", "equilibrium"], ["↑", "gas given off"], ["↓", "precipitate"], ["Δ", "heat delta"],
+      ["°", "degree"], ["℃", "degrees celsius"], ["·", "hydrate dot"], ["⁺", "positive charge"], ["⁻", "negative charge"],
+      ["²⁺", "2+ charge"], ["²⁻", "2- charge"], ["³⁺", "3+ charge"], ["³⁻", "3- charge"], ["e⁻", "electron"], ["Å", "angstrom"],
+      ["‡", "transition state"], ["H₂O", "water"], ["CO₂", "carbon dioxide"], ["O₂", "oxygen"], ["H₂", "hydrogen"], ["N₂", "nitrogen"],
+      ["NaCl", "sodium chloride salt"], ["HCl", "hydrochloric acid"], ["H₂SO₄", "sulfuric acid"], ["HNO₃", "nitric acid"],
+      ["NaOH", "sodium hydroxide"], ["NH₃", "ammonia"], ["CH₄", "methane"], ["C₆H₁₂O₆", "glucose"], ["CaCO₃", "calcium carbonate"],
+      ["H₂O₂", "hydrogen peroxide"], ["KMnO₄", "potassium permanganate"], ["C₂H₅OH", "ethanol"], ["Fe₂O₃", "iron oxide rust"],
+      ["NH₄⁺", "ammonium"], ["OH⁻", "hydroxide"], ["H₃O⁺", "hydronium"], ["H⁺", "hydrogen ion proton"], ["SO₄²⁻", "sulfate"],
+      ["NO₃⁻", "nitrate"], ["CO₃²⁻", "carbonate"], ["PO₄³⁻", "phosphate"]] },
+    { id: "physics", name: "Physics", items: [
+      ["Ω", "ohm omega"], ["µ", "micro mu"], ["λ", "wavelength lambda"], ["ν", "frequency nu"], ["ħ", "h bar reduced planck"],
+      ["ε₀", "permittivity epsilon zero"], ["μ₀", "permeability mu zero"], ["ρ", "density rho"], ["θ", "angle theta"], ["ω", "angular velocity omega"],
+      ["τ", "torque tau"], ["Φ", "flux phi"], ["η", "efficiency eta"], ["°C", "degrees celsius"], ["K", "kelvin"], ["m/s²", "metres per second squared"],
+      ["c = 3.00 × 10⁸ m/s", "speed of light constant"], ["g = 9.81 m/s²", "gravity acceleration constant"],
+      ["G = 6.67 × 10⁻¹¹ N·m²/kg²", "gravitational constant"], ["h = 6.63 × 10⁻³⁴ J·s", "planck constant"],
+      ["e = 1.60 × 10⁻¹⁹ C", "elementary charge constant"], ["k = 8.99 × 10⁹ N·m²/C²", "coulomb constant"],
+      ["Nₐ = 6.02 × 10²³ mol⁻¹", "avogadro constant"], ["R = 8.31 J/(mol·K)", "gas constant"],
+      ["k_B = 1.38 × 10⁻²³ J/K", "boltzmann constant"], ["mₑ = 9.11 × 10⁻³¹ kg", "electron mass constant"]] },
+    { id: "more", name: "Currency & more", items: [
+      ["€", "euro"], ["£", "pound"], ["¥", "yen yuan"], ["₩", "won"], ["NT$", "new taiwan dollar"], ["¢", "cent"], ["©", "copyright"],
+      ["®", "registered"], ["™", "trademark"], ["§", "section"], ["¶", "paragraph pilcrow"], ["†", "dagger"], ["•", "bullet"],
+      ["…", "ellipsis"], ["—", "em dash"], ["–", "en dash"], ["“", "left double quote"], ["”", "right double quote"],
+      ["‘", "left single quote"], ["’", "right single quote apostrophe"], ["✓", "check tick"], ["✗", "cross"], ["★", "star"],
+      ["☆", "star outline"], ["♪", "music note"], ["♥", "heart"]] },
+  ];
+  const EQUATIONS = {
+    Maths: [
+      ["Arithmetic series", "Sₙ = n(a₁ + aₙ)/2"], ["Binomial square", "(a + b)² = a² + 2ab + b²"], ["Circle area", "A = πr²"],
+      ["Circumference", "C = 2πr"], ["Compound interest", "A = P(1 + r/n)ⁿᵗ"], ["Derivative (power rule)", "d/dx xⁿ = nxⁿ⁻¹"],
+      ["Difference of squares", "a² − b² = (a + b)(a − b)"], ["Distance formula", "d = √((x₂ − x₁)² + (y₂ − y₁)²)"],
+      ["Euler's identity", "e^(iπ) + 1 = 0"], ["Geometric series", "Sₙ = a₁(1 − rⁿ)/(1 − r)"], ["Integral (power rule)", "∫xⁿ dx = xⁿ⁺¹/(n + 1) + C"],
+      ["Law of cosines", "c² = a² + b² − 2ab cos C"], ["Law of sines", "a/sin A = b/sin B = c/sin C"], ["Logarithm product", "log(ab) = log a + log b"],
+      ["Midpoint", "M = ((x₁ + x₂)/2, (y₁ + y₂)/2)"], ["Pythagorean identity", "sin²θ + cos²θ = 1"], ["Pythagorean theorem", "a² + b² = c²"],
+      ["Quadratic formula", "x = (−b ± √(b² − 4ac)) / 2a"], ["Slope", "m = (y₂ − y₁)/(x₂ − x₁)"], ["Sphere volume", "V = ⁴⁄₃πr³"],
+    ],
+    Physics: [
+      ["Centripetal acceleration", "a = v²/r"], ["Coulomb's law", "F = kq₁q₂/r²"], ["Density", "ρ = m/V"], ["Electric power", "P = IV"],
+      ["Gravitation", "F = Gm₁m₂/r²"], ["Hooke's law", "F = −kx"], ["Kinematics (velocity)", "v = u + at"], ["Kinematics (displacement)", "s = ut + ½at²"],
+      ["Kinematics (no time)", "v² = u² + 2as"], ["Kinetic energy", "Eₖ = ½mv²"], ["Mass–energy", "E = mc²"], ["Momentum", "p = mv"],
+      ["Newton's second law", "F = ma"], ["Ohm's law", "V = IR"], ["Pendulum period", "T = 2π√(L/g)"], ["Photon energy", "E = hf"],
+      ["Potential energy", "Eₚ = mgh"], ["Power", "P = W/t"], ["Pressure", "P = F/A"], ["Snell's law", "n₁ sin θ₁ = n₂ sin θ₂"],
+      ["Wave speed", "v = fλ"], ["Weight", "W = mg"], ["Work", "W = Fd cos θ"],
+    ],
+    Chemistry: [
+      ["Arrhenius equation", "k = Ae^(−Eₐ/RT)"], ["Combined gas law", "P₁V₁/T₁ = P₂V₂/T₂"], ["Combustion of methane", "CH₄ + 2O₂ → CO₂ + 2H₂O"],
+      ["Concentration", "c = n/V"], ["Dilution", "c₁V₁ = c₂V₂"], ["Gibbs free energy", "ΔG = ΔH − TΔS"], ["Heat", "q = mcΔT"],
+      ["Henderson–Hasselbalch", "pH = pKₐ + log([A⁻]/[HA])"], ["Ideal gas law", "PV = nRT"], ["Moles", "n = m/M"],
+      ["Neutralisation", "HCl + NaOH → NaCl + H₂O"], ["Number of particles", "N = n × Nₐ"], ["pH", "pH = −log[H⁺]"], ["pH + pOH", "pH + pOH = 14"],
+      ["Photosynthesis", "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂"], ["Rate law", "rate = k[A]ᵐ[B]ⁿ"], ["Respiration", "C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O"],
+      ["Water ionisation", "K_w = [H⁺][OH⁻] = 1.0 × 10⁻¹⁴"],
+    ],
+  };
+  // Typed shortcuts: \alpha + space → α, -> → →, x^2 → x², H_2O → H₂O
+  const BACKSLASH = { sqrt: "√", inf: "∞", infty: "∞", deg: "°", pm: "±", times: "×", div: "÷", neq: "≠", ne: "≠", approx: "≈",
+    le: "≤", leq: "≤", ge: "≥", geq: "≥", sum: "∑", int: "∫", partial: "∂", nabla: "∇", therefore: "∴", because: "∵",
+    in: "∈", notin: "∉", subset: "⊂", cup: "∪", cap: "∩", emptyset: "∅", forall: "∀", exists: "∃", to: "→", rightarrow: "→",
+    leftarrow: "←", implies: "⇒", iff: "⇔", eq: "⇌", angle: "∠", perp: "⊥", parallel: "∥", cdot: "·", prime: "′", hbar: "ħ",
+    ohm: "Ω", micro: "µ", half: "½", celsius: "℃", check: "✓", star: "★" };
+  GREEK_NAMES.forEach((n, i) => {
+    BACKSLASH[n] = greekLower[i];
+    const up = greekUpper[i];
+    if (!GREEK_LATIN_LOOKALIKE.includes(up)) BACKSLASH[n[0].toUpperCase() + n.slice(1)] = up;
+  });
+  const ARROWS = [["<=>", "⇔"], ["<->", "↔"], ["←>", "↔"], ["≤>", "⇔"], ["->", "→"], ["<-", "←"], ["=>", "⇒"], ["<=", "≤"],
+    [">=", "≥"], ["!=", "≠"], ["+-", "±"], ["~=", "≈"], ["(c)", "©"], ["(tm)", "™"]];
+
   const HAS_HIGHLIGHT = !!(window.CSS && CSS.highlights && window.Highlight);
 
   // ---------- storage ----------
-  const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m", docLayout: "pages", grammar: true };
+  const DEFAULT_SETTINGS = { view: "blocks", sort: "edited", pinnedTop: true, textSize: "m", docLayout: "pages", grammar: true, autoSymbols: true, recentChars: [] };
   const TEXT_SIZES = { s: "Small", m: "Medium", l: "Large", xl: "Extra large" };
   let data = { version: 2, labels: [], notes: [], settings: Object.assign({}, DEFAULT_SETTINGS) };
   let loadFailed = false;
@@ -472,7 +587,7 @@
   // ---------- the view ----------
   function mount(root, options) {
     const opts = options || {};
-    const view = { label: "all", type: "all", archive: false, editLabels: false, doc: null, expanded: null, focus: null };
+    const view = { label: "all", type: "all", archive: false, editLabels: false, doc: null, expanded: null, focus: null, query: "", findQuery: null };
     const IMPORTANCE_RANK = { high: 0, medium: 1, low: 2 };
     function compare(a, b) {
       const sort = data.settings.sort;
@@ -663,12 +778,26 @@
         ]),
       }, svg(ICON.view, 13), VIEWS[data.settings.view] + " \u00B7 " + SORTS[data.settings.sort]);
 
+      const searchBox = el("label", { class: "sl-search" + (view.query ? " has" : "") }, svg(ICON.find, 14),
+        el("input", {
+          class: "sl-search-input",
+          type: "search",
+          placeholder: "Search",
+          value: view.query,
+          "aria-label": "Search all notes",
+          title: "Search titles, doc text, agenda items and labels (Ctrl+F)",
+          oninput: (e) => { view.query = e.target.value; render({ search: true }); },
+          onkeydown: (e) => {
+            if (e.key === "Escape" && view.query) { e.preventDefault(); e.stopPropagation(); view.query = ""; render({ search: true }); }
+          },
+        }));
+
       const newAgenda = el("button", { class: "sl-new", onclick: () => newNote("agenda") }, svg(ICON.plus, 13), "Agenda");
       const newDoc = el("button", { class: "sl-new", onclick: () => newNote("doc") }, svg(ICON.plus, 13), "Doc");
 
       return el("div", { class: "sl-bar" },
         el("div", { class: "sl-group" }, tabs, types),
-        el("div", { class: "sl-group" }, viewBtn, archiveBtn, newAgenda, newDoc));
+        el("div", { class: "sl-group" }, searchBox, viewBtn, archiveBtn, newAgenda, newDoc));
     }
 
     // ---------- cards ----------
@@ -984,10 +1113,16 @@
       }
       function restoreSel() {
         body.focus();
-        if (savedRange) {
-          const sel = window.getSelection();
+        const sel = window.getSelection();
+        if (savedRange && body.contains(savedRange.startContainer)) {
           sel.removeAllRanges();
           sel.addRange(savedRange);
+        } else if (!sel.rangeCount || !body.contains(sel.anchorNode)) {
+          const r = document.createRange();
+          r.selectNodeContents(body);
+          r.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(r);
         }
       }
       function run(cmd, value) {
@@ -1121,11 +1256,13 @@
       // ----- keyboard shortcuts list -----
       const SHORTCUTS = [
         ["Bold", "Ctrl+B"], ["Italic", "Ctrl+I"], ["Underline", "Ctrl+U"], ["Strikethrough", "Alt+Shift+5"],
-        ["Clear formatting", "Ctrl+\\"], ["Normal text", "Ctrl+Alt+0"], ["Title / Heading / Subheading", "Ctrl+Alt+1 / 2 / 3"],
+        ["Superscript / subscript", "Ctrl+. / Ctrl+,"], ["Clear formatting", "Ctrl+\\"], ["Normal text", "Ctrl+Alt+0"], ["Title / Heading / Subheading", "Ctrl+Alt+1 / 2 / 3"],
         ["Numbered list", "Ctrl+Shift+7"], ["Bulleted list", "Ctrl+Shift+8"], ["Indent / outdent list", "Tab / Shift+Tab"],
         ["Align left / centre / right", "Ctrl+Shift+L / E / R"], ["Justify", "Ctrl+Shift+J"], ["Insert link", "Ctrl+K"],
         ["Page break", "Ctrl+Enter"], ["Find", "Ctrl+F"], ["Find and replace", "Ctrl+H"], ["Undo / redo", "Ctrl+Z / Ctrl+Y"],
         ["Print or save as PDF", "Ctrl+P"], ["This list", "Ctrl+/"],
+        ["Greek and maths symbols", "\\alpha, \\pi, \\sqrt + space"], ["Arrows and signs", "->  =>  <=  >=  !=  +-"],
+        ["Powers and chemistry", "x^2 then space, H_2O"],
       ];
       function showShortcuts(anchor) {
         closeMenu();
@@ -1140,6 +1277,7 @@
       const linkBtn = tool(ICON.link, "Link", (b) => linkMenu(b), null, "Ctrl+K");
       const keysBtn = tool(ICON.keys, "Keyboard shortcuts", (b) => showShortcuts(b), null, "Ctrl+/");
       const grammarBtn = tool(ICON.grammar, "Grammar suggestions", () => toggleGrammar(), null);
+      const charsBtn = tool(ICON.omega, "Special characters and equations", () => toggleChars(), null);
       const badge = el("span", { class: "sl-badge", hidden: true });
       grammarBtn.append(badge);
 
@@ -1151,6 +1289,8 @@
         tool(ICON.italic, "Italic", () => run("italic"), "italic", "Ctrl+I"),
         tool(ICON.underline, "Underline", () => run("underline"), "underline", "Ctrl+U"),
         tool(ICON.strike, "Strikethrough", () => run("strikeThrough"), "strikeThrough", "Alt+Shift+5"),
+        tool(ICON.sup, "Superscript", () => run("superscript"), "superscript", "Ctrl+."),
+        tool(ICON.sub, "Subscript", () => run("subscript"), "subscript", "Ctrl+,"),
         tool(ICON.color, "Text colour", (b) => swatchMenu(b, "Text colour", TEXT_COLORS, "foreColor")),
         tool(ICON.mark, "Highlight", (b) => swatchMenu(b, "Highlight", MARKS, "hiliteColor")),
         sep(),
@@ -1162,6 +1302,7 @@
         tool(ICON.ol, "Numbered list", () => run("insertOrderedList"), "insertOrderedList", "Ctrl+Shift+7"),
         linkBtn,
         tool(ICON.hr, "Divider line", () => run("insertHorizontalRule")),
+        charsBtn,
         sep(),
         tool(ICON.pages, "Page layout: pages or pageless", (b) => layoutMenu(b)),
         tool(ICON.outline, "Show or hide outline", () => { outlineOpen = !outlineOpen; outline.hidden = !outlineOpen; buildOutline(); }),
@@ -1248,6 +1389,10 @@
         const k = (e.key || "").toLowerCase();
         const inText = body.contains(e.target);
         let act = null;
+        if (e.key === "Escape" && !menu) {
+          if (gpop) act = closePop;
+          else if (!findBar.hidden) act = closeFind;
+        }
         // Anywhere on the doc page
         if (c && !e.shiftKey && !e.altKey) {
           if (k === "p") act = printDoc;
@@ -1263,6 +1408,8 @@
             else if (k === "u") act = () => run("underline");
             else if (k === "k") act = () => linkMenu(linkBtn);
             else if (k === "\\") act = () => run("removeFormat");
+            else if (k === ".") act = () => run("superscript");
+            else if (k === ",") act = () => run("subscript");
             else if (k === "enter") act = insertPageBreak;
             else if (k === "z") act = () => run("undo");
             else if (k === "y") act = () => run("redo");
@@ -1450,10 +1597,23 @@
         gList,
         el("p", { class: "sl-g-note", text: "English grammar, spelling and punctuation rules. Works offline; nothing leaves your computer." }));
       function toggleGrammar(force) {
-        grammarOpen = force === undefined ? !grammarOpen : force;
+        const on = force === undefined ? !grammarOpen : force;
+        openSide(on ? "grammar" : null);
+      }
+      function toggleChars(force) {
+        const on = force === undefined ? !charsOpen : force;
+        openSide(on ? "chars" : null);
+      }
+      // One side panel at a time.
+      function openSide(which) {
+        grammarOpen = which === "grammar";
+        charsOpen = which === "chars";
         grammarPanel.hidden = !grammarOpen;
+        charPanel.hidden = !charsOpen;
         grammarBtn.classList.toggle("on", grammarOpen);
+        charsBtn.classList.toggle("on", charsOpen);
         check();
+        if (charsOpen) drawChars();
       }
       function check() {
         issues = [];
@@ -1462,11 +1622,20 @@
           for (const x of grammarCheck(b.text, isList)) {
             if (ignored.has(issueKey(x))) continue;
             x.range = rangeFor(b, x.start, x.end);
+            // Short fixes (one capital letter, "i", a space) underline the whole word so they are easy to see.
+            let ws = x.start;
+            let we = x.end;
+            if (we - ws <= 2) {
+              while (ws > 0 && /[\w'’]/.test(b.text[ws - 1])) ws--;
+              while (we < b.text.length && /[\w'’]/.test(b.text[we])) we++;
+              if (we === ws) { ws = Math.max(0, ws - 1); we = Math.min(b.text.length, we + 1); }
+            }
+            x.show = ws === x.start && we === x.end ? x.range : rangeFor(b, ws, we);
             issues.push(x);
           }
         }
         const show = data.settings.grammar !== false;
-        setHighlight("sl-grammar", show ? issues.map((x) => x.range) : null);
+        setHighlight("sl-grammar", show ? issues.map((x) => x.show) : null);
         badge.hidden = !show || !issues.length;
         badge.textContent = issues.length > 99 ? "99+" : String(issues.length);
         // Only redraw the list when the suggestions actually changed.
@@ -1478,7 +1647,7 @@
       function issueCard(x) {
         return el("div", {
           class: "sl-g-card",
-          onmouseenter: () => setHighlight("sl-grammar-now", [x.range]),
+          onmouseenter: () => setHighlight("sl-grammar-now", [x.show]),
           onmouseleave: () => setHighlight("sl-grammar-now", null),
           onclick: (e) => { if (!e.target.closest("button")) scrollToRange(x.range); },
         },
@@ -1530,7 +1699,7 @@
         const n = sel.anchorNode;
         const o = sel.anchorOffset;
         return issues.find((x) => {
-          try { return x.range.isPointInRange(n, o); } catch (e) { return false; }
+          try { return x.show.isPointInRange(n, o); } catch (e) { return false; }
         }) || null;
       }
       function maybePop() {
@@ -1538,7 +1707,7 @@
         if (data.settings.grammar === false) return;
         const x = issueAtCaret();
         if (!x) return;
-        const box = x.range.getBoundingClientRect();
+        const box = x.show.getBoundingClientRect();
         const r = root.getBoundingClientRect();
         gpop = el("div", { class: "sl-gpop", role: "dialog", "aria-label": "Suggestion" },
           el("span", { class: "sl-g-msg", text: x.msg }),
@@ -1548,6 +1717,178 @@
         gpop.style.left = Math.max(8, Math.min(box.left - r.left, r.width - 268)) + "px";
         gpop.style.top = (box.bottom - r.top + 8) + "px";
         root.append(gpop);
+      }
+
+
+      // ----- special characters and equations -----
+      let charsOpen = false;
+      let charCat = (data.settings.recentChars || []).length ? "recent" : "maths";
+      let eqSubject = "Maths";
+      const charSearch = el("input", {
+        class: "sl-find-input sl-char-search",
+        type: "search",
+        placeholder: "Search: alpha, degree, arrow, quadratic…",
+        "aria-label": "Search symbols and equations",
+        oninput: () => drawChars(),
+        onkeydown: (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (charSearch.value) { charSearch.value = ""; drawChars(); } else toggleChars(false); } },
+      });
+      const charCats = el("div", { class: "sl-char-cats", role: "tablist", "aria-label": "Symbol groups" });
+      const charBody = el("div", { class: "sl-char-body" });
+      const autoBox = el("input", {
+        type: "checkbox",
+        checked: data.settings.autoSymbols !== false,
+        onchange: (e) => { data.settings.autoSymbols = e.target.checked; save(); },
+      });
+      const charPanel = el("aside", { class: "sl-grammar sl-chars", hidden: true, "aria-label": "Special characters and equations" },
+        el("div", { class: "sl-g-head" },
+          el("span", { class: "sl-choice-head", text: "CHARACTERS & EQUATIONS" }),
+          el("button", { class: "sl-tool", "aria-label": "Close characters", onclick: () => toggleChars(false) }, svg(ICON.x, 14))),
+        charSearch, charCats, charBody,
+        el("label", { class: "sl-g-opt" }, autoBox, "Typing shortcuts (\\alpha, ->, x^2, H_2O)"));
+      const SYMBOL_NAME = {};
+      for (const c of SYMBOLS) for (const [ch, name] of c.items) if (!SYMBOL_NAME[ch]) SYMBOL_NAME[ch] = name;
+      for (const list of Object.values(EQUATIONS)) for (const [name, f] of list) SYMBOL_NAME[f] = name;
+      function insertChar(text) {
+        run("insertText", text);
+        const rec = (data.settings.recentChars || []).filter((x) => x !== text);
+        rec.unshift(text);
+        data.settings.recentChars = rec.slice(0, 24);
+        save();
+        saveSel();
+        if (charCat === "recent" && !charSearch.value) drawChars();
+      }
+      const keepText = (e) => { saveSel(); e.preventDefault(); };
+      function charGrid(items) {
+        const g = el("div", { class: "sl-char-grid" });
+        for (const [ch, name] of items) {
+          const size = ch.length <= 2 ? "" : ch.length <= 7 ? " mid" : " row";
+          g.append(el("button", {
+            class: "sl-char" + size,
+            title: name,
+            "aria-label": name,
+            onmousedown: keepText,
+            onclick: () => insertChar(ch),
+          }, el("span", { class: "sl-char-glyph", text: ch }), size === " row" ? el("span", { class: "sl-char-name", text: name }) : null));
+        }
+        return g;
+      }
+      function eqList(list, showSubject) {
+        const box = el("div", { class: "sl-eq-list" });
+        for (const [name, f, subject] of list) {
+          box.append(el("button", { class: "sl-eq", title: "Insert " + name, onmousedown: keepText, onclick: () => insertChar(f) },
+            el("span", { class: "sl-eq-name", text: name + (showSubject ? " · " + subject : "") }),
+            el("span", { class: "sl-eq-f", text: f })));
+        }
+        return box;
+      }
+      function drawChars() {
+        const q = charSearch.value.trim().toLowerCase();
+        charCats.textContent = "";
+        charBody.textContent = "";
+        charCats.hidden = !!q;
+        if (q) {
+          const words = q.split(/\s+/);
+          const hit = (t) => words.every((w) => t.includes(w));
+          const seen = new Set();
+          const items = [];
+          for (const c of SYMBOLS) {
+            for (const [ch, name] of c.items) {
+              if (!seen.has(ch) && hit((name + " " + c.name + " " + ch).toLowerCase())) { seen.add(ch); items.push([ch, name]); }
+            }
+          }
+          const eqs = [];
+          for (const [subject, list] of Object.entries(EQUATIONS)) {
+            for (const [name, f] of list) if (hit((name + " " + subject + " " + f).toLowerCase())) eqs.push([name, f, subject]);
+          }
+          if (items.length) charBody.append(charGrid(items.slice(0, 160)));
+          if (eqs.length) charBody.append(el("span", { class: "sl-choice-head", text: "EQUATIONS" }), eqList(eqs, true));
+          if (!items.length && !eqs.length) charBody.append(el("p", { class: "sl-g-note", text: "Nothing found for “" + q + "”." }));
+          return;
+        }
+        const cats = [{ id: "recent", name: "Recent" }].concat(SYMBOLS.map((c) => ({ id: c.id, name: c.name })), [{ id: "equations", name: "Equations" }]);
+        for (const c of cats) {
+          charCats.append(el("button", {
+            class: "sl-cat" + (charCat === c.id ? " on" : ""),
+            role: "tab",
+            "aria-selected": charCat === c.id ? "true" : "false",
+            onmousedown: (e) => e.preventDefault(),
+            onclick: () => { charCat = c.id; drawChars(); },
+            text: c.name,
+          }));
+        }
+        if (charCat === "recent") {
+          const rec = data.settings.recentChars || [];
+          if (rec.length) charBody.append(charGrid(rec.map((r) => [r, SYMBOL_NAME[r] || r])));
+          else charBody.append(el("p", { class: "sl-g-note", text: "Symbols and equations you use will appear here." }));
+          return;
+        }
+        if (charCat === "equations") {
+          const subj = el("div", { class: "sl-char-cats" });
+          for (const name of Object.keys(EQUATIONS)) {
+            subj.append(el("button", {
+              class: "sl-cat" + (eqSubject === name ? " on" : ""),
+              onmousedown: (e) => e.preventDefault(),
+              onclick: () => { eqSubject = name; drawChars(); },
+              text: name,
+            }));
+          }
+          charBody.append(subj, eqList(EQUATIONS[eqSubject].map(([n, f]) => [n, f, eqSubject]), false));
+          return;
+        }
+        if (charCat === "scripts") {
+          charBody.append(el("div", { class: "sl-g-btns" },
+            el("button", { class: "sl-pill", onmousedown: keepText, onclick: () => run("superscript"), text: "x² Superscript  Ctrl+." }),
+            el("button", { class: "sl-pill", onmousedown: keepText, onclick: () => run("subscript"), text: "x₂ Subscript  Ctrl+," })));
+        }
+        const group = SYMBOLS.find((c) => c.id === charCat) || SYMBOLS[0];
+        charBody.append(charGrid(group.items));
+      }
+
+      // Typing shortcuts: \alpha + space, ->, x^2 + space, H_2O
+      let replacing = false;
+      const toScript = (t, to, from) => Array.from(t).map((c) => to[from.indexOf(c)] || c).join("");
+      function autoSymbol(e) {
+        if (replacing || data.settings.autoSymbols === false || e.inputType !== "insertText" || !e.data) return;
+        const sel = window.getSelection();
+        if (!sel.rangeCount || !sel.isCollapsed) return;
+        const node = sel.anchorNode;
+        if (!node || node.nodeType !== 3) return;
+        const off = sel.anchorOffset;
+        const before = node.textContent.slice(0, off).replace(/ /g, " ");
+        const typed = before.slice(-1);
+        let start = -1;
+        let end = off;
+        let sym = null;
+        let after = 0;
+        let m;
+        if (/\s/.test(typed) && (m = before.match(/\\([A-Za-z]+)\s$/)) && BACKSLASH[m[1]]) {
+          start = off - m[0].length; end = off - 1; sym = BACKSLASH[m[1]]; after = 1;
+        }
+        if (sym === null) {
+          for (const [from, to] of ARROWS) {
+            if (before.endsWith(from)) { start = off - from.length; sym = to; break; }
+          }
+        }
+        if (sym === null && !/[0-9]/.test(typed)) {
+          const head = before.slice(0, -1);
+          if ((m = head.match(/[A-Za-z0-9)\]]\^(-?\d+|n)$/))) {
+            const len = m[1].length + 1;
+            start = off - 1 - len; end = off - 1; sym = toScript(m[1], SUPS, SUP_FROM); after = 1;
+          } else if ((m = head.match(/[A-Za-z)\]]_(\d+)$/))) {
+            const len = m[1].length + 1;
+            start = off - 1 - len; end = off - 1; sym = toScript(m[1], SUBS, SUB_FROM); after = 1;
+          }
+        }
+        if (sym === null || start < 0) return;
+        replacing = true;
+        const r = document.createRange();
+        r.setStart(node, start);
+        r.setEnd(node, end);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        document.execCommand("insertText", false, sym);
+        for (let i = 0; i < after; i++) sel.modify("move", "forward", "character");
+        replacing = false;
       }
 
       // ----- pages: split the doc into separate sheets, like Google Docs -----
@@ -1641,7 +1982,8 @@
         // New lines become proper paragraphs.
         try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
       });
-      body.addEventListener("input", () => { syncBody(); buildOutline(); closePop(); later(); });
+      body.addEventListener("input", (e) => { autoSymbol(e); syncBody(); buildOutline(); closePop(); later(); });
+      body.addEventListener("blur", saveSel);
       body.addEventListener("paste", (e) => {
         // Keep simple formatting from the clipboard, drop everything else.
         e.preventDefault();
@@ -1691,7 +2033,7 @@
       const scroller = el("div", { class: "sl-doc-scroll" }, paper);
       scroller.addEventListener("scroll", closePop);
       const page = el("div", { class: "sl-docpage", onkeydown: shortcut }, head, tools, findBar,
-        el("div", { class: "sl-doc-main" }, outline, scroller, grammarPanel));
+        el("div", { class: "sl-doc-main" }, outline, scroller, grammarPanel, charPanel));
 
       // Re-split pages when the window is resized, and around printing.
       let lastW = 0;
@@ -1709,6 +2051,12 @@
       updateStatus();
       buildOutline();
       later();
+      // Opened from search: show the matches in the doc.
+      if (view.findQuery) {
+        const q = view.findQuery;
+        view.findQuery = null;
+        setTimeout(() => { findBar.hidden = false; findInput.value = q; runFind(true); }, 60);
+      }
       return { page, title, body };
     }
 
@@ -1846,6 +2194,84 @@
       setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
     }
 
+    // ---------- search everything (like iOS) ----------
+    function noteText(n) {
+      return n.type === "doc" ? htmlToText(n.html) : (n.items || []).map((i) => i.text).join(" · ");
+    }
+    function snippet(text, words) {
+      const lt = text.toLowerCase();
+      let i = -1;
+      for (const w of words) {
+        const j = lt.indexOf(w);
+        if (j >= 0 && (i < 0 || j < i)) i = j;
+      }
+      if (i < 0) return text.slice(0, 120) + (text.length > 120 ? "…" : "");
+      const start = Math.max(0, i - 40);
+      return (start > 0 ? "…" : "") + text.slice(start, start + 140) + (start + 140 < text.length ? "…" : "");
+    }
+    function markText(node, text, words) {
+      const re = new RegExp("(" + words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
+      let last = 0;
+      text.replace(re, (m, g, idx) => {
+        node.append(text.slice(last, idx), el("mark", { text: m }));
+        last = idx + m.length;
+        return m;
+      });
+      node.append(text.slice(last));
+      return node;
+    }
+    function openResult(n, q) {
+      if (n.type === "doc") {
+        if (opts.full) view.findQuery = q;
+        openDoc(n.id);
+        return;
+      }
+      if (n.resolved) { view.archive = true; view.query = ""; render(); return; }
+      view.focus = n.id;
+      render();
+    }
+    function searchResults(q) {
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const hits = [];
+      for (const n of data.notes) {
+        const title = n.title || "";
+        const text = noteText(n);
+        const label = labelById(n.label);
+        const hay = (title + " " + text + " " + (label ? label.name : "")).toLowerCase();
+        if (!words.every((w) => hay.includes(w))) continue;
+        const inTitle = words.some((w) => title.toLowerCase().includes(w));
+        hits.push({ n, title, text, label, score: (inTitle ? 0 : 1) + (n.resolved ? 2 : 0) });
+      }
+      hits.sort((a, b) => a.score - b.score || compare(a.n, b.n));
+      const wrap = el("div", { class: "sl-results", role: "list" });
+      if (!hits.length) {
+        wrap.append(el("div", { class: "sl-empty" },
+          el("h3", { text: "Nothing matches “" + q + "”." }),
+          el("p", { text: "Search looks through titles, doc text, agenda items and labels." })));
+        return wrap;
+      }
+      wrap.append(el("div", { class: "sl-section", text: hits.length + (hits.length === 1 ? " RESULT" : " RESULTS") }));
+      for (const h of hits) {
+        const open = () => openResult(h.n, q);
+        wrap.append(el("div", {
+          class: "sl-result",
+          role: "listitem",
+          tabindex: "0",
+          onclick: open,
+          onkeydown: (e) => { if (e.key === "Enter") open(); },
+        },
+          el("span", { class: "sl-result-icon c-" + (h.n.color || "oat") }, svg(h.n.type === "doc" ? ICON.doc : ICON.agenda, 15)),
+          el("div", { class: "sl-result-text" },
+            markText(el("strong"), h.title || (h.n.type === "doc" ? "Untitled doc" : "Untitled agenda"), words),
+            h.text ? markText(el("span", { class: "sl-result-snip" }), snippet(h.text, words), words) : null),
+          el("div", { class: "sl-result-meta" },
+            h.n.resolved ? el("span", { class: "sl-chip", text: "Resolved" }) : null,
+            h.label ? el("span", { class: "sl-chip", style: "background: var(--c-" + h.label.color + ")", text: h.label.name }) : null,
+            el("span", { class: "sl-chip", text: ago(h.n.edited || h.n.created) }))));
+      }
+      return wrap;
+    }
+
     // ---------- render ----------
     function render(focus) {
       closeMenu();
@@ -1870,7 +2296,9 @@
       root.append(toolbar(), scroller);
       if (toast) root.append(toast);
 
-      if (loadFailed) {
+      if (!loadFailed && view.query.trim()) {
+        scroller.append(searchResults(view.query.trim()));
+      } else if (loadFailed) {
         scroller.append(el("div", { class: "sl-empty" },
           el("h3", { text: "Your notes couldn't be opened." }),
           el("p", { text: "Nothing was changed. Your previous copy is kept as notes.bak.json in the StillLife data folder." })));
@@ -1916,7 +2344,9 @@
 
       if (focus) {
         let target = null;
-        if (focus.label) {
+        if (focus.search) {
+          target = root.querySelector(".sl-search-input");
+        } else if (focus.label) {
           target = root.querySelector('.sl-label-input[data-label="' + focus.label + '"]');
         } else {
           const c = root.querySelector('.sl-card.big[data-id="' + focus.id + '"]') || root.querySelector('.sl-card[data-id="' + focus.id + '"]') || root.querySelector('[data-id="' + focus.id + '"]');
@@ -1967,6 +2397,12 @@
       }
     }
     document.addEventListener("keydown", (e) => {
+      // Ctrl+F on the notes list jumps to search (inside a doc it finds text instead).
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key || "").toLowerCase() === "f" && !view.doc && root.isConnected) {
+        const box = root.querySelector(".sl-search-input");
+        if (box) { e.preventDefault(); box.focus(); box.select(); }
+        return;
+      }
       if (e.key !== "Escape") return;
       if (menu) closeMenu();
       else if (view.focus) { view.focus = null; render(); }
