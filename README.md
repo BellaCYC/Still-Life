@@ -6,7 +6,11 @@
 <p align="center"><em>Every note, quietly in orbit.</em></p>
 
 <p align="center">
-  <a href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Setup.exe"><strong>⬇ Download for Windows</strong></a>
+  <a href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Setup.exe"><strong>⬇ Windows</strong></a>
+  ·
+  <a href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Mac.dmg"><strong>⬇ Mac</strong></a>
+  ·
+  <a href="https://bellacyc.github.io/Still-Life/app/"><strong>iPhone, iPad, Android</strong></a>
   ·
   <a href="https://bellacyc.github.io/Still-Life/">Download page</a>
 </p>
@@ -15,11 +19,21 @@
 
 ## Install
 
-1. Click **Download for Windows** above.
-2. Double-click **StillLife-Setup.exe**.
-3. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. This is normal for new apps.
+**Windows laptop or desktop**
+1. Download **StillLife-Setup.exe** (link above) and double-click it.
+2. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. This is normal for new apps.
 
-## What's inside (version 1.1)
+**Mac**
+1. Download **StillLife-Mac.dmg**, open it and drag StillLife into **Applications**.
+2. Open it from Applications. If the Mac says it can't check the developer, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+**iPhone and iPad**: open [the StillLife app page](https://bellacyc.github.io/Still-Life/app/) in Safari, tap **Share**, then **Add to Home Screen**.
+
+**Samsung and other Android phones and tablets**: open [the StillLife app page](https://bellacyc.github.io/Still-Life/app/) in Chrome or Samsung Internet, tap **⋮** (or **≡**), then **Install app** or **Add to Home screen**.
+
+On phones and tablets StillLife opens full screen with its own icon and works offline. The island (the pill at the screen edge) is only on Windows and Mac.
+
+## What's inside (version 1.2)
 
 **The island.** A small pill at the edge of your screen. Rest the cursor on it to open your notes on a glass plate; drag it to any edge; switch it off before exams.
 
@@ -35,7 +49,7 @@
 - Special characters and ready-made maths, physics and chemistry equations; typing shortcuts like `\alpha`, `->`, `x^2`, `H_2O`
 - Version history with time and computer name, showing what changed; restore any version
 
-**Handwriting, like GoodNotes.** Smooth pressure-sensitive pen, highlighter, eraser (whole stroke or part), lasso to move, resize or recolour, hold-to-snap shapes (lines, arrows, triangles, squares, polygons, circles), stickers and stickers made from your own pictures, a big palette with custom colours and an eyedropper, and paper that grows as you write.
+**Handwriting, like GoodNotes.** Smooth pressure-sensitive pen, highlighter, eraser (whole stroke or part), lasso to move, resize or recolour, hold-to-snap shapes (lines, arrows, triangles, squares, polygons, circles), stickers and stickers made from your own pictures, a big palette with custom colours and an eyedropper, and paper that grows as you write, downwards and sideways (Paper → Make the paper wider, for timelines and mind maps).
 
 **Code notes, like OneCompiler.** A third kind of note next to Agendas and Docs: write C++, Java, Python, JavaScript, C#, Go, Rust and more with line numbers and colours, give it input, press Run, and save the file.
 
@@ -49,8 +63,9 @@
 
 ### Good to know
 
-- Your notes stay on your computer. Translation, the dictionary and running code use free online services (MyMemory, Free Dictionary, Wandbox) and only send what you ask them to. Study groups pass encrypted messages through a free public relay (HiveMQ or Mosquitto); only people with the group code can read them.
-- Not in this version, because they need an online account service or app-store developer accounts: signing in with Google, live document collaboration, syncing notes between devices, and iPhone, iPad or Android apps. Turning handwriting into typed text isn't built in either; on Windows 11 you can write straight into text with a pen.
+- Your notes stay on the device you write them on. To move them, use **Back up all notes** and import the file on the other device. Translation, the dictionary and running code use free online services (MyMemory, Free Dictionary, Wandbox) and only send what you ask them to. Study groups pass encrypted messages through a free public relay (HiveMQ or Mosquitto); only people with the group code can read them.
+- Not in this version, because they need an online account service: signing in with Google, live document collaboration and automatic syncing between devices. Turning handwriting into typed text isn't built in either; on Windows 11 you can write straight into text with a pen.
+- The phone and tablet version is a web app, so there is nothing to download from an app store. Running code needs the Wandbox service to accept requests from browsers; if it doesn't, Run works in the Windows and Mac apps.
 
 ## For developers
 
@@ -59,11 +74,13 @@ Built with [Tauri 2](https://tauri.app).
 ```bash
 npm install
 npm run dev     # run the app locally
-npm run build   # build the Windows installer
+npm run build   # build the installer for this computer (Windows or Mac)
 ```
 
 ### Releasing a new version
 
 1. Change `version` in `src-tauri/tauri.conf.json` (and in `package.json` and `src-tauri/Cargo.toml`).
 2. Go to **Actions → Release → Run workflow**.
-3. A few minutes later the new installer appears under **Releases**, and the download button gives it to everyone automatically.
+3. A few minutes later the Windows and Mac installers appear under **Releases**, and the download buttons give them to everyone automatically.
+
+The phone and tablet web app lives in `docs/app` and is served by GitHub Pages (Settings → Pages → Deploy from a branch → `main`, `/docs`). The **Web app** workflow copies `ui/` into it whenever `ui/` changes.

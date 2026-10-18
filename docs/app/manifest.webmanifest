@@ -1,0 +1,16 @@
+{
+  "name": "StillLife",
+  "short_name": "StillLife",
+  "description": "Every note, quietly in orbit. Agendas, docs with handwriting, code and study.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#efebe5",
+  "theme_color": "#f5f5f4",
+  "icons": [
+    { "src": "app-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "app-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "app-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

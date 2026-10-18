@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>StillLife</title>
+  <meta name="theme-color" content="#f5f5f4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="StillLife">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="app-192.png">
+  <link rel="stylesheet" href="notes.css">
+  <style>
+    :root {
+      --paper: #f5f5f4;
+      --ground: #efebe5;
+      --ink: #2f2e2b;
+      --muted: #5a5650;
+      --lavender: #c9c1e6;
+      --butter: #e6e3a8;
+      --sage: #b7c2ae;
+      --mist: #a9b7c2;
+      --rose: #d3b5af;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--ground);
+      color: var(--ink);
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 24px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-left: max(24px, env(safe-area-inset-left));
+      padding-right: max(24px, env(safe-area-inset-right));
+      background: var(--paper);
+      border-bottom: 1px solid rgba(47, 46, 43, 0.08);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .planet {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--paper) url("icon.png") center / 130% no-repeat;
+      box-shadow: inset 0 0 0 1px rgba(47, 46, 43, 0.08);
+    }
+    .brand .name { font-family: Georgia, serif; font-style: italic; font-size: 22px; }
+    .brand .date { font-size: 12px; color: var(--muted); }
+
+    .tabs { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(47, 46, 43, 0.07); }
+    .tabs button {
+      height: 32px; padding: 0 16px; border: 0; border-radius: 999px;
+      background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: #4a4741; cursor: pointer;
+    }
+    .tabs button.on { background: #ffffff; color: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+    .new {
+      height: 36px; padding: 0 16px; border: 0; border-radius: 999px;
+      background: var(--ink); color: #f3efe8; font: inherit; font-size: 13px; font-weight: 700;
+      opacity: 0.45; cursor: not-allowed;
+    }
+
+    .right { display: flex; align-items: center; gap: 14px; }
+    .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .track {
+      position: relative; width: 40px; height: 24px; border-radius: 999px;
+      background: #c9c2b8; transition: background 0.2s ease;
+    }
+    .knob {
+      position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+      background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform 0.2s ease;
+    }
+    .switch input:checked + .track { background: #b3a3c4; }
+    .switch input:checked + .track .knob { transform: translateX(16px); }
+    .switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+    .notes-area { flex: 1; min-height: 0; min-width: 0; }
+    html, body { max-width: 100%; overflow-x: hidden; }
+    main { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 24px; min-height: 0; }
+
+    .tip {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; border-radius: 14px; background: #ffffff;
+      font-size: 14px; line-height: 1.5;
+    }
+    .tip .text { flex: 1; }
+    .tip button {
+      height: 32px; padding: 0 12px; border: 0; border-radius: 8px;
+      background: rgba(47, 46, 43, 0.07); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+
+    .empty {
+      flex: 1;
+      border-radius: 22px;
+      border: 2px dashed rgba(47, 46, 43, 0.16);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; text-align: center; padding: 24px;
+    }
+    .empty img { width: min(200px, 30vmin); height: auto; mix-blend-mode: multiply; }
+    .empty h1 { margin: 0; font-family: Georgia, serif; font-style: italic; font-weight: 400; font-size: 32px; }
+    .empty p { margin: 0; font-size: 15px; color: var(--muted); }
+    .swatches { display: flex; gap: 8px; margin-top: 6px; }
+    .swatches span { width: 26px; height: 26px; border-radius: 8px; }
+
+    footer { padding: 0 24px 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); font-size: 12px; color: var(--muted); }
+    .web .app-only { display: none !important; }
+    .web-only { display: none; }
+    .web .web-only { display: inline; }
+    @media (max-width: 700px) {
+      header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); gap: 8px; }
+      .brand .name { font-size: 19px; }
+      .planet { width: 30px; height: 30px; }
+      main { padding: 12px 12px 8px; gap: 10px; }
+      .tip { padding: 12px; font-size: 13px; }
+      .tip > .planet { display: none; }
+      footer, .clock { display: none !important; }
+      main { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+      /* In a doc, code or study page the page gets the whole screen. */
+      body:has(.sl-docpage) header, body:has(.sl-codepage) header, body:has(.sl-study) header,
+      body:has(.sl-docpage) #tip, body:has(.sl-codepage) #tip, body:has(.sl-study) #tip { display: none; }
+      body:has(.sl-docpage) main, body:has(.sl-codepage) main, body:has(.sl-study) main { padding-top: max(10px, env(safe-area-inset-top)); }
+    }
+    .clock { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .clock[hidden] { display: none; }
+    .clk-time { color: var(--ink); }
+    .clk-bat { display: inline-flex; align-items: center; gap: 5px; }
+    .clk-bat-body { position: relative; width: 22px; height: 11px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px currentColor; padding: 2px; box-sizing: border-box; }
+    .clk-bat-body::after { content: ""; position: absolute; right: -3px; top: 3px; width: 2px; height: 5px; border-radius: 0 1px 1px 0; background: currentColor; }
+    .clk-bat-fill { display: block; height: 100%; border-radius: 1px; background: #7d9a87; }
+    .clk-bat.low .clk-bat-fill { background: #c97a6e; }
+    .clk-bat.charging .clk-bat-fill { background: #b3a3c4; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="planet" aria-hidden="true"></span>
+      <div>
+        <div class="name">StillLife</div>
+        <div class="date" id="date"></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="clock" id="clock" aria-live="off"></div>
+      <label class="switch app-only" title="Turn the island off before exams or presentations">
+        <input type="checkbox" id="island-switch" checked>
+        <span class="track" aria-hidden="true"><span class="knob"></span></span>
+        <span id="island-label">Island on</span>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <div class="tip" id="tip">
+      <span class="planet" aria-hidden="true" style="width: 28px; height: 28px; flex-shrink: 0"></span>
+      <div class="text app-only">
+        <strong>Quick look anytime:</strong> rest your cursor on the island pill at the edge of your screen to open it (drag the pill to move it to any edge).
+        Closing this window keeps StillLife running in the tray, bottom-right.
+        Before an exam, switch <strong>Island</strong> off (top-right), or choose <strong>Quit StillLife</strong> from the tray.
+      </div>
+      <div class="text web-only" id="web-tip">
+        <strong>Keep StillLife on your home screen:</strong>
+        <span id="install-how">on iPhone or iPad, tap Share, then Add to Home Screen. On Android, tap ⋮, then Install app or Add to Home screen.</span>
+        Your notes stay on this device.
+      </div>
+      <button id="hide-tip">Got it</button>
+    </div>
+
+    <div id="notes" class="notes-area"></div>
+  </main>
+
+  <footer>Every note, quietly in orbit. · version 1.2</footer>
+
+  <script src="tools.js"></script>
+  <script src="i18n.js"></script>
+  <script src="group.js"></script>
+  <script src="notes.js"></script>
+  <script>
+    StillLifeNotes.mount(document.getElementById("notes"), { label: "main", full: true, clockEl: document.getElementById("clock") });
+
+    document.getElementById("date").textContent = new Date().toLocaleDateString(undefined, {
+      weekday: "long", day: "numeric", month: "long", year: "numeric"
+    });
+    const tauri = window.__TAURI__;
+    if (!(tauri && tauri.core)) {
+      document.documentElement.classList.add("web");
+      if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+    const sw = document.getElementById("island-switch");
+    const label = document.getElementById("island-label");
+    function showIsland(on) {
+      sw.checked = on;
+      label.textContent = on ? "Island on" : "Island off";
+    }
+    if (tauri && tauri.core) {
+      tauri.core.invoke("island_enabled").then(showIsland);
+      tauri.event.listen("island-enabled", (e) => showIsland(e.payload));
+      sw.addEventListener("change", () => {
+        tauri.core.invoke("set_island_enabled", { enabled: sw.checked });
+      });
+    }
+
+    // F11: full screen
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "F11" && tauri && tauri.core) { e.preventDefault(); tauri.core.invoke("toggle_fullscreen"); }
+    });
+
+    const tip = document.getElementById("tip");
+    const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    const isWeb = document.documentElement.classList.contains("web");
+    try { if (localStorage.getItem("tipHidden") === "1" || (isWeb && installed)) tip.remove(); } catch (e) {}
+    if (isWeb && !/iPhone|iPad|iPod|Android|Macintosh/.test(navigator.userAgent)) document.getElementById("install-how").textContent = "in Chrome or Edge, click the install icon at the right end of the address bar.";
+    document.getElementById("hide-tip").addEventListener("click", () => {
+      tip.remove();
+      try { localStorage.setItem("tipHidden", "1"); } catch (e) {}
+    });
+  </script>
+</body>
+</html>

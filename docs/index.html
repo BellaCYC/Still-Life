@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StillLife — download</title>
-  <meta name="description" content="StillLife: every note, quietly in orbit. Free download for Windows.">
+  <meta name="description" content="StillLife: every note, quietly in orbit. Free for Windows, Mac, iPhone, iPad and Android.">
+  <link rel="apple-touch-icon" href="app/apple-touch-icon.png">
   <link rel="icon" href="icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet">
@@ -129,6 +130,24 @@
     .warning-text p { margin: 0 0 8px; }
     .caption { font-size: 12px; color: var(--muted); }
 
+    .devices { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+    .device {
+      display: flex; flex-direction: column; gap: 10px; padding: 22px; border-radius: 20px;
+      background: var(--card); box-shadow: 0 0 0 1px rgba(47, 46, 43, 0.06);
+    }
+    .device.mine { box-shadow: 0 0 0 2px #b3a3c4, 0 14px 30px rgba(60, 52, 44, 0.12); }
+    .device .tag { align-self: flex-start; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; padding: 3px 9px; border-radius: 999px; background: linear-gradient(135deg, #e9e1f0, #f1e4e8); color: #45394f; visibility: hidden; }
+    .device.mine .tag { visibility: visible; }
+    .device h3 { margin: 0; font-size: 19px; }
+    .device .for { margin: 0; font-size: 14px; color: var(--muted); }
+    .device ol { margin: 0; padding-left: 20px; font-size: 14px; color: var(--muted); }
+    .device li { margin-bottom: 4px; }
+    .device .btn {
+      margin-top: auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 18px;
+      border-radius: 14px; background: linear-gradient(135deg, #cdc1dc, #e0cbd2); color: #45394f; font-weight: 800; text-decoration: none;
+    }
+    .device .btn:hover { filter: brightness(1.05); }
+    .note { margin-top: 18px; font-size: 14px; color: var(--muted); }
     footer { padding: 32px 0 48px; font-size: 13px; color: var(--muted); }
     footer a { color: var(--muted); }
   </style>
@@ -140,37 +159,67 @@
       <div class="hero-text">
         <h1>StillLife</h1>
         <p class="tagline">Every note, quietly in orbit.</p>
-        <a class="download" href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Setup.exe">
+        <a class="download" id="main-download" href="#get">
           <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
-          Download for Windows
+          <span id="main-label">Get StillLife</span>
         </a>
-        <p class="meta">Free · Windows 10 and 11 · Early preview ·
+        <p class="meta">Free · Windows, Mac, iPhone, iPad and Android ·
           <a href="https://github.com/BellaCYC/Still-Life/releases">All versions</a></p>
       </div>
     </div>
   </header>
 
   <main>
-    <section>
+    <section id="get">
       <div class="wrap">
-        <h2>How to install</h2>
-        <div class="steps">
-          <div class="step">
-            <span class="num">1</span>
-            <h3>Download</h3>
-            <p>Click the button above. The file <strong>StillLife-Setup.exe</strong> saves to your Downloads folder.</p>
+        <h2>Get it on your device</h2>
+        <div class="devices">
+          <div class="device" id="d-win">
+            <span class="tag">THIS DEVICE</span>
+            <h3>Windows</h3>
+            <p class="for">Laptops and desktops, Windows 10 and 11</p>
+            <ol>
+              <li>Download <strong>StillLife-Setup.exe</strong>.</li>
+              <li>Double-click it. If you see "Windows protected your PC", see below.</li>
+              <li>StillLife opens; find it later in the Start menu.</li>
+            </ol>
+            <a class="btn" href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Setup.exe">Download</a>
           </div>
-          <div class="step">
-            <span class="num">2</span>
-            <h3>Open it</h3>
-            <p>Double-click the file. If a blue window appears, see the note below; it's normal.</p>
+          <div class="device" id="d-mac">
+            <span class="tag">THIS DEVICE</span>
+            <h3>Mac</h3>
+            <p class="for">MacBook and iMac, Apple silicon and Intel</p>
+            <ol>
+              <li>Download <strong>StillLife-Mac.dmg</strong>, open it, drag StillLife into Applications.</li>
+              <li>Open StillLife from Applications.</li>
+              <li>If the Mac says it can't check the developer: <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</li>
+            </ol>
+            <a class="btn" href="https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Mac.dmg">Download</a>
           </div>
-          <div class="step">
-            <span class="num">3</span>
-            <h3>Done</h3>
-            <p>StillLife installs in a few seconds and opens. You'll find it in the Start menu.</p>
+          <div class="device" id="d-ios">
+            <span class="tag">THIS DEVICE</span>
+            <h3>iPhone and iPad</h3>
+            <p class="for">Opens full screen with its own icon, works offline</p>
+            <ol>
+              <li>Open the StillLife app page in <strong>Safari</strong>.</li>
+              <li>Tap <strong>Share</strong> (the square with an arrow).</li>
+              <li>Tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+            </ol>
+            <a class="btn" href="app/">Open StillLife</a>
+          </div>
+          <div class="device" id="d-android">
+            <span class="tag">THIS DEVICE</span>
+            <h3>Android</h3>
+            <p class="for">Samsung Galaxy phones and tablets, and other Android devices</p>
+            <ol>
+              <li>Open the StillLife app page in <strong>Chrome</strong> or <strong>Samsung Internet</strong>.</li>
+              <li>Tap <strong>⋮</strong> (or <strong>≡</strong> in Samsung Internet).</li>
+              <li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+            </ol>
+            <a class="btn" href="app/">Open StillLife</a>
           </div>
         </div>
+        <p class="note">Your notes stay on the device you write them on. To move them to another device, use <strong>Back up all notes</strong> in StillLife, then <strong>Import</strong> the file on the other one.</p>
 
         <div class="warning">
           <div class="mock" role="img" aria-label="Illustration of the Windows warning screen, with the More info link and the Run anyway button highlighted">
@@ -195,5 +244,25 @@
       <a href="https://github.com/BellaCYC/Still-Life">Source on GitHub</a>
     </div>
   </footer>
+  <script>
+    // Point the big button at the right download for this device.
+    (function () {
+      var ua = navigator.userAgent || "";
+      var ipad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+      var kind = ipad || /iPhone|iPod/.test(ua) ? "ios" : /Android/.test(ua) ? "android" : /Mac/.test(ua) ? "mac" : /Windows/.test(ua) ? "win" : "";
+      if (!kind) return;
+      document.getElementById("d-" + kind).classList.add("mine");
+      var btn = document.getElementById("main-download");
+      var label = document.getElementById("main-label");
+      var map = {
+        win: ["https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Setup.exe", "Download for Windows"],
+        mac: ["https://github.com/BellaCYC/Still-Life/releases/latest/download/StillLife-Mac.dmg", "Download for Mac"],
+        ios: ["app/", ipad ? "Open StillLife for iPad" : "Open StillLife for iPhone"],
+        android: ["app/", "Open StillLife for Android"]
+      };
+      btn.href = map[kind][0];
+      label.textContent = map[kind][1];
+    })();
+  </script>
 </body>
 </html>

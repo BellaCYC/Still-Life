@@ -7,13 +7,14 @@
  * - Docs show as previews; opening one shows a full document page (in the full window).
  * Labels belong to the user: none by default, add / rename / recolour / delete freely.
  *
- * When StillLife runs as a plain web page (e.g. previewing), data falls back to localStorage.
+ * When StillLife runs as a web app (iPhone, iPad, Android, any browser), notes are kept in the
+ * browser's own database (IndexedDB), with a copy in localStorage while it fits.
  */
 (function () {
   "use strict";
 
   const tauri = window.__TAURI__;
-  const VERSION = "1.1.1";
+  const VERSION = "1.2";
   const hasApp = !!(tauri && tauri.core);
 
   const COLORS = ["sage", "mist", "rose", "oat", "lilac", "clay", "celadon", "lavender"];
@@ -273,8 +274,13 @@
       wrap.classList.add("open");
       btn.setAttribute("aria-expanded", "true");
       setActive(o.options.findIndex((x) => x.value === value));
-      if (pop.getBoundingClientRect().bottom > window.innerHeight - 8) pop.classList.add("up");
+      place();
+      // Show the chosen option without scrolling anything else on the page.
+      const sel = pop.querySelector(".on");
+      if (sel && sel.offsetTop + sel.offsetHeight > pop.clientHeight) pop.scrollTop = sel.offsetTop - pop.clientHeight / 2;
       setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+      window.addEventListener("resize", close);
+      document.addEventListener("scroll", onScroll, true);
       document.addEventListener("keydown", keys, true);
     }
     function close() {
@@ -285,6 +291,43 @@
       btn.setAttribute("aria-expanded", "false");
       document.removeEventListener("mousedown", away, true);
       document.removeEventListener("keydown", keys, true);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", onScroll, true);
+    }
+    // Fixed to the screen, so it is never cut off by a toolbar that scrolls sideways (phones).
+    function place() {
+      if (!pop) return;
+      pop.classList.remove("up");
+      pop.style.top = pop.style.bottom = pop.style.maxHeight = "";
+      const b = btn.getBoundingClientRect();
+      const pw = Math.max(b.width, pop.offsetWidth);
+      pop.style.minWidth = b.width + "px";
+      pop.style.left = Math.max(8, Math.min(b.left, window.innerWidth - pw - 8)) + "px";
+      const below = window.innerHeight - b.bottom - 14;
+      const above = b.top - 14;
+      if (pop.scrollHeight > below && above > below) {
+        pop.classList.add("up");
+        pop.style.bottom = (window.innerHeight - b.top + 6) + "px";
+        pop.style.maxHeight = above + "px";
+      } else {
+        pop.style.top = (b.bottom + 6) + "px";
+        pop.style.maxHeight = below + "px";
+      }
+      // A blurred or moving parent (a sheet, the glass plate) shifts "fixed": correct for it.
+      pop.style.animation = "none";
+      const got = pop.getBoundingClientRect();
+      pop.style.animation = "";
+      const wantLeft = parseFloat(pop.style.left);
+      if (Math.abs(got.left - wantLeft) > 1) pop.style.left = (2 * wantLeft - got.left) + "px";
+      if (pop.style.top) { const wt = parseFloat(pop.style.top); if (Math.abs(got.top - wt) > 1) pop.style.top = (2 * wt - got.top) + "px"; }
+      else { const wb = window.innerHeight - parseFloat(pop.style.bottom); if (Math.abs(got.bottom - wb) > 1) pop.style.bottom = (parseFloat(pop.style.bottom) + got.bottom - wb) + "px"; }
+    }
+    // Something scrolled: follow the button, and close only once it has left the screen.
+    function onScroll(e) {
+      if (!pop || pop.contains(e.target)) return;
+      const r = btn.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) close();
+      else place();
     }
     function away(e) { if (!wrap.contains(e.target)) close(); }
     function setActive(i) {
@@ -624,7 +667,7 @@
   ];
   // ---------- document tabs (like Google Docs): each tab has its own page ----------
   // The open tab's content lives on the note itself; the others keep theirs in note.tabs.
-  const TAB_FIELDS = ["html", "ink", "stickers", "extraPages", "extraSpace"];
+  const TAB_FIELDS = ["html", "ink", "stickers", "extraPages", "extraSpace", "extraWidth"];
   function ensureTabs(note) {
     if (!Array.isArray(note.tabs) || !note.tabs.length) {
       note.tabs = [{ id: "main", title: "Tab 1", parent: null }];
@@ -673,7 +716,10 @@
   // ---------- version history ----------
   const VERSION_KEEP = 40;
   const VERSION_BYTES = 500000;
-  let deviceName = "This computer";
+  const UA = navigator.userAgent || "";
+  const IS_IPAD = /iPad/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  const IS_PHONE_OR_TABLET = IS_IPAD || /iPhone|iPod|Android/.test(UA);
+  let deviceName = hasApp ? "This computer" : IS_IPAD ? "iPad" : /iPhone/.test(UA) ? "iPhone" : /Android/.test(UA) ? (/Mobile/.test(UA) ? "Android phone" : "Android tablet") : /Mac/.test(UA) ? "Mac" : "This device";
   if (hasApp) tauri.core.invoke("device_name").then((n) => { if (n) deviceName = n; }).catch(() => {});
   function versionsOf(note) {
     if (!Array.isArray(note.versions)) note.versions = [];
@@ -829,8 +875,75 @@
       const out = [res.compiler_error, res.program_output, res.program_error].filter(Boolean).join("\n").trim();
       return { out: out || "(no output)", failed: !!(res.status && res.status !== "0") };
     } catch (e) {
+      if (!hasApp && navigator.onLine !== false && e instanceof TypeError)
+        return { out: "Couldn't reach the code runner from this browser.\nCheck your internet connection and try again. If it keeps failing, running code works in the Windows and Mac apps.", failed: true };
       return { out: "Couldn't run the code. Check your internet connection.\n" + (e && e.message ? e.message : ""), failed: true };
     }
+  }
+
+  // ---------- web app storage (IndexedDB: no 5 MB limit, keeps pictures and recordings) ----------
+  const webDb = (() => {
+    let opening = null;
+    function open() {
+      if (!opening) opening = new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error("no IndexedDB")); return; }
+        const req = indexedDB.open("stilllife", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("kv");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      return opening;
+    }
+    function run(mode, fn) {
+      return open().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", mode);
+        const req = fn(tx.objectStore("kv"));
+        tx.oncomplete = () => resolve(req && req.result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      }));
+    }
+    return {
+      get: (k) => run("readonly", (st) => st.get(k)),
+      set: (k, v) => run("readwrite", (st) => st.put(v, k)),
+      del: (k) => run("readwrite", (st) => st.delete(k)),
+    };
+  })();
+  // Ask the browser not to clear StillLife's data when the device runs low on space.
+  if (!hasApp && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  async function webLoad() {
+    let rec = null;
+    try { rec = await webDb.get("notes"); } catch (e) { rec = null; }
+    let lsText = null;
+    let lsT = 0;
+    try { lsText = localStorage.getItem("stilllife-notes"); lsT = +(localStorage.getItem("stilllife-notes-t") || 0); } catch (e) {}
+    if (rec && rec.text && (!lsText || rec.t >= lsT)) return rec.text;
+    return lsText || "[]";
+  }
+  async function webSave(text) {
+    const t = Date.now();
+    let ok = false;
+    try { await webDb.set("notes", { t, text }); ok = true; } catch (e) {}
+    try { localStorage.setItem("stilllife-notes", text); localStorage.setItem("stilllife-notes-t", String(t)); ok = true; }
+    catch (e) { try { localStorage.removeItem("stilllife-notes"); localStorage.removeItem("stilllife-notes-t"); } catch (e2) {} }
+    if (!ok) throw new Error("this browser wouldn't save");
+  }
+  const saveText = (text) => (hasApp ? tauri.core.invoke("save_notes", { data: text }) : webSave(text));
+  // Recordings and other big media: a file in the app, the browser database on the web.
+  async function mediaSave(id, blob, toB64) {
+    if (hasApp) return tauri.core.invoke("save_media", { id, data: await toB64(blob) });
+    return webDb.set("media:" + id, blob);
+  }
+  async function mediaLoad(id, type) {
+    if (!hasApp) return (await webDb.get("media:" + id)) || null;
+    const b64 = await tauri.core.invoke("load_media", { id });
+    const bin = atob(b64);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: type || "audio/webm" });
+  }
+  function mediaDelete(id) {
+    (hasApp ? tauri.core.invoke("delete_media", { id }) : webDb.del("media:" + id)).catch(() => {});
   }
 
   // ---------- storage ----------
@@ -874,7 +987,7 @@
 
   async function load() {
     try {
-      const text = hasApp ? await tauri.core.invoke("load_notes") : (localStorage.getItem("stilllife-notes") || "[]");
+      const text = hasApp ? await tauri.core.invoke("load_notes") : await webLoad();
       data = migrate(JSON.parse(text));
       loadFailed = false;
     } catch (e) {
@@ -889,8 +1002,7 @@
     saveTimer = setTimeout(async () => {
       const text = JSON.stringify(data);
       try {
-        if (hasApp) await tauri.core.invoke("save_notes", { data: text });
-        else localStorage.setItem("stilllife-notes", text);
+        await saveText(text);
       } catch (e) {
         console.error("StillLife could not save", e);
       }
@@ -979,8 +1091,7 @@
         // Save straight away so the full window can find it.
         clearTimeout(saveTimer);
         const text = JSON.stringify(data);
-        const done = hasApp ? tauri.core.invoke("save_notes", { data: text }) : Promise.resolve(localStorage.setItem("stilllife-notes", text));
-        Promise.resolve(done).then(() => openDoc(note.id));
+        saveText(text).catch(() => {}).then(() => openDoc(note.id));
         if (!opts.full) render();
       } else {
         save();
@@ -1069,6 +1180,7 @@
     }
     function closeDoc() {
       view.doc = null;
+      view.study = false;
       render();
     }
 
@@ -1389,9 +1501,19 @@
             if (e.key === "Enter" && e.target.value.trim()) {
               e.preventDefault();
               note.items.push({ id: uid(), text: e.target.value.trim(), done: false });
+              e.target.value = "";
               touch(note);
               render({ id: note.id, sel: ".sl-add-item" });
             }
+          },
+          // Tapping somewhere else keeps what was typed (phones have no obvious Enter).
+          onblur: (e) => {
+            const text = e.target.value.trim();
+            if (!text || !data.notes.includes(note)) return;
+            e.target.value = "";
+            note.items.push({ id: uid(), text, done: false });
+            touch(note);
+            setTimeout(() => { if (!editing()) render(); }, 0);
           },
         }));
       }
@@ -1514,6 +1636,7 @@
         const words = htmlToText(note.html).split(" ").filter(Boolean).length;
         let t = words + (words === 1 ? " word" : " words");
         if (layout() === "pages") t += " · " + pageCount + (pageCount === 1 ? " page" : " pages");
+        if (note.extraWidth > 0) t += " · " + (Math.round((816 + note.extraWidth) / 81.6) / 10) + "× wide";
         const strokes = (note.ink || []).length;
         if (strokes) t += " · " + strokes + (strokes === 1 ? " stroke" : " strokes");
         status.textContent = t + " · " + (extra || "saved");
@@ -1812,7 +1935,12 @@
           el("hr", { class: "sl-choice-line" }),
           el("button", { class: "sl-choice sl-action", onmousedown: (e) => e.preventDefault(), onclick: () => { closeMenu(); insertPageBreak(); } }, "Insert page break  \u00B7  Ctrl+Enter"),
           el("button", { class: "sl-choice sl-action", onclick: () => { if (layout() === "pages") note.extraPages = (note.extraPages || 0) + 1; else note.extraSpace = (note.extraSpace || 0) + 600; touch(note); closeMenu(); later(); } }, "Add a blank page at the end"),
-          (note.extraPages || note.extraSpace) ? el("button", { class: "sl-choice sl-action", onclick: () => { note.extraPages = 0; note.extraSpace = 0; touch(note); closeMenu(); later(); } }, "Remove added blank pages") : null);
+          (note.extraPages || note.extraSpace) ? el("button", { class: "sl-choice sl-action", onclick: () => { note.extraPages = 0; note.extraSpace = 0; touch(note); closeMenu(); later(); } }, "Remove added blank pages") : null,
+          el("span", { class: "sl-choice-head", text: "PAPER WIDTH" }),
+          el("p", { class: "sl-choice-note", text: "The paper can keep going sideways, for timelines, mind maps and wide diagrams. Your typing stays in the first column; the paper added on the right is for drawing, and it also widens by itself when you draw near the edge." }),
+          el("button", { class: "sl-choice sl-action", onclick: () => { closeMenu(); if (widen(WIDE_STEP)) setTimeout(() => scroller.scrollBy({ left: WIDE_STEP * zoomK(), behavior: "smooth" }), 80); } }, "Make the paper wider →"),
+          (note.extraWidth || 0) > 0 ? el("button", { class: "sl-choice sl-action", onclick: () => { closeMenu(); trimWidth(); } }, "Trim the empty paper on the right") : null,
+          (note.extraWidth || 0) > 0 ? el("button", { class: "sl-choice sl-action", onclick: () => { closeMenu(); widen(-(note.extraWidth || 0)); } }, "Back to one page wide") : null);
         root.append(menu);
         placeMenu(anchor, 340, 600);
       }
@@ -2616,6 +2744,11 @@
 
       // ----- handwriting: a drawing layer over the page -----
       const REF = 816; // the page is 816 units wide; strokes are stored in those units
+      // The page can grow sideways for drawing: the writing stays in the first 816 units,
+      // and extra paper is added to the right (note.extraWidth).
+      const WIDE_STEP = 408;
+      const WIDE_MAX = REF * 4;
+      const pageW = () => REF + Math.max(0, Math.min(WIDE_MAX, note.extraWidth || 0));
       if (!Array.isArray(note.ink)) note.ink = [];
       if (!Array.isArray(note.stickers)) note.stickers = [];
       const canvas = el("canvas", { class: "sl-ink", "aria-hidden": "true" });
@@ -2673,11 +2806,12 @@
         if (!h) return false;
         inkH = h;
         // Sharp at any zoom, but never larger than the browser allows for one canvas.
-        res = Math.max(0.5, Math.min(4, (window.devicePixelRatio || 1) * k, 16000 / h, Math.sqrt(40e6 / (REF * h))));
-        const cw = Math.round(REF * res);
+        const W = pageW();
+        res = Math.max(0.5, Math.min(4, (window.devicePixelRatio || 1) * k, 16000 / h, 16000 / W, Math.sqrt(40e6 / (W * h))));
+        const cw = Math.round(W * res);
         const ch = Math.round(h * res);
         if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
-        canvas.style.width = REF + "px";
+        canvas.style.width = W + "px";
         canvas.style.height = h + "px";
         return true;
       }
@@ -3188,6 +3322,44 @@
         }
         return null;
       }
+      // Drawing near the right edge adds paper to the right.
+      function applyWidth() {
+        const extra = pageW() - REF;
+        paper.style.width = pageW() + "px";
+        zoomBox.style.width = pageW() + "px";
+        paper.style.paddingRight = extra ? (64 + extra) + "px" : "";
+        paper.classList.toggle("wide", extra > 0);
+      }
+      function inkRight() {
+        let r = 0;
+        for (const s of note.ink) for (let i = 0; i < s.pts.length; i += 3) if (s.pts[i] > r) r = s.pts[i];
+        for (const st of note.stickers) r = Math.max(r, st.x + st.w);
+        return r;
+      }
+      function widen(by) {
+        const before = note.extraWidth || 0;
+        note.extraWidth = Math.max(0, Math.min(WIDE_MAX, before + by));
+        if (note.extraWidth === before) return false;
+        applyWidth();
+        touch(note);
+        later();
+        drawInk();
+        if (drawing) drawTray();
+        return true;
+      }
+      // Give back paper on the right that nothing is drawn on.
+      function trimWidth() {
+        const need = Math.max(0, Math.ceil((inkRight() + 60 - REF) / 102) * 102);
+        widen(need - (note.extraWidth || 0));
+      }
+      function growWideIfNeeded(s) {
+        let maxX = 0;
+        for (let i = 0; i < s.pts.length; i += 3) if (s.pts[i] > maxX) maxX = s.pts[i];
+        if (maxX > pageW() - 70 && widen(WIDE_STEP)) {
+          // Keep the new paper in view.
+          setTimeout(() => scroller.scrollBy({ left: WIDE_STEP * zoomK() * 0.6, behavior: "smooth" }), 60);
+        }
+      }
       // Drawing near the bottom adds room, like extending the paper in CollaNotes.
       function growIfNeeded(y) {
         if (y > inkH - 140) {
@@ -3315,6 +3487,7 @@
         for (let i = 0; i < s.pts.length; i++) s.pts[i] = Math.round(s.pts[i] * 100) / 100;
         note.ink.push(s);
         growIfNeeded(s.pts[s.pts.length - 2]);
+        growWideIfNeeded(s);
         inkChanged();
       }
       canvas.addEventListener("pointerup", endStroke);
@@ -3329,7 +3502,7 @@
         // Drop it in the middle of what is on screen.
         const cx = ((sr.left + sr.width / 2) - pr.left) / k;
         const cy = ((sr.top + sr.height / 2) - pr.top) / k;
-        const st = { src, x: Math.max(10, Math.min(REF - w - 10, cx - w / 2)), y: Math.max(10, cy - h / 2), w, h };
+        const st = { src, x: Math.max(10, Math.min(pageW() - w - 10, cx - w / 2)), y: Math.max(10, cy - h / 2), w, h };
         note.stickers.push(st);
         if (!drawing) toggleDraw(true);
         setTool("lasso");
@@ -3596,6 +3769,8 @@
           trayBtn(ICON.redo, "Redo", false, () => stepInk(redoInk, undoInk)),
           trayBtn(ICON.shapes, "Hold at the end of a stroke to make a neat shape", shapeSnap, () => { shapeSnap = !shapeSnap; data.settings.shapeSnap = shapeSnap; save(); drawTray(); }),
           el("button", { class: "sl-pill", title: "Add more paper below", onclick: () => { if (layout() === "pages") note.extraPages = (note.extraPages || 0) + 1; else note.extraSpace = (note.extraSpace || 0) + 600; touch(note); later(); setTimeout(() => scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }), 120); }, text: layout() === "pages" ? "+ Page" : "+ Space" }),
+          el("button", { class: "sl-pill", title: "Add more paper to the right (it also grows by itself when you draw near the edge)", onclick: () => { if (widen(WIDE_STEP)) setTimeout(() => scroller.scrollBy({ left: WIDE_STEP * zoomK(), behavior: "smooth" }), 80); }, text: "Wider →" }),
+          ...((note.extraWidth || 0) > 0 ? [el("button", { class: "sl-pill", title: "Remove empty paper on the right", onclick: trimWidth, text: "Trim width" })] : []),
           el("label", { class: "sl-tray-opt" },
             el("input", { type: "checkbox", checked: fingerDraw, onchange: (e) => { fingerDraw = e.target.checked; data.settings.fingerDraw = fingerDraw; save(); } }),
             "Draw with finger"),
@@ -3738,7 +3913,7 @@
       let zoomMode = data.settings.docZoom === undefined ? "auto" : data.settings.docZoom; // auto | fit | a number
       function zoomK() {
         const wpx = paper.getBoundingClientRect().width;
-        return wpx ? wpx / REF : 1;
+        return wpx ? wpx / pageW() : 1;
       }
       function fitZoom() {
         const avail = (scroller.clientWidth || 900) - 40;
@@ -4044,8 +4219,8 @@
             const ink = (note.ink.length || note.stickers.length) ? '<img class="ink" src="' + canvas.toDataURL("image/png") + '" alt="">' : "";
             const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' +
               (note.title || "Untitled doc").replace(/</g, "&lt;") + "</title><style>body{margin:0;background:#efebe5;font-family:'Segoe UI',system-ui,sans-serif;color:#34322e}" +
-              ".page{position:relative;width:816px;max-width:100%;margin:24px auto;padding:48px 64px 64px;box-sizing:border-box;background:" + (note.paperColor || "#fffdf9") + ";border-radius:6px;box-shadow:0 2px 14px rgba(60,52,44,.12);line-height:1.75}" +
-              "h1.t{font-family:Georgia,serif;font-size:34px;margin:0 0 18px}h1,h2,h3{line-height:1.25}img{max-width:100%;border-radius:6px}.ink{position:absolute;left:0;top:0;width:816px;pointer-events:none}" +
+              ".page{position:relative;width:" + pageW() + "px;max-width:100%;margin:24px auto;padding:48px " + (64 + pageW() - REF) + "px 64px 64px;box-sizing:border-box;background:" + (note.paperColor || "#fffdf9") + ";border-radius:6px;box-shadow:0 2px 14px rgba(60,52,44,.12);line-height:1.75}" +
+              "h1.t{font-family:Georgia,serif;font-size:34px;margin:0 0 18px}h1,h2,h3{line-height:1.25}img{max-width:100%;border-radius:6px}.ink{position:absolute;left:0;top:0;width:" + pageW() + "px;pointer-events:none}" +
               "blockquote{margin:.6em 0 1em;padding:10px 16px;border-radius:10px;background:rgba(189,179,196,.3);font-family:Georgia,serif;font-style:italic}pre{background:#2f3340;color:#e9e6f2;padding:14px 16px;border-radius:12px;white-space:pre-wrap}</style></head><body><div class=\"page\">" +
               '<h1 class="t">' + (note.title || "Untitled doc").replace(/</g, "&lt;") + "</h1>" + allTabsHtml(note) + ink + "</div></body></html>";
             await saveFile(stem + ".html", html, "text/html");
@@ -4414,7 +4589,6 @@
 
       // ----- lecture recording: record audio into the doc, with playback -----
       if (!Array.isArray(note.recordings)) note.recordings = [];
-      const memMedia = new Map(); // in the browser preview there is no disk
       let recorder = null;
       let recChunks = [];
       let recStart = 0;
@@ -4489,8 +4663,7 @@
         recBar.hidden = true;
         const id = "rec" + uid();
         try {
-          if (hasApp) await tauri.core.invoke("save_media", { id, data: await blobToB64(blob) });
-          else memMedia.set(id, blob);
+          await mediaSave(id, blob, blobToB64);
         } catch (e) {
           updateStatus("the recording couldn't be saved");
           return;
@@ -4503,14 +4676,7 @@
       async function playRecording(r, holder) {
         holder.textContent = "Loading…";
         try {
-          let blob = memMedia.get(r.id);
-          if (!blob && hasApp) {
-            const b64 = await tauri.core.invoke("load_media", { id: r.id });
-            const bin = atob(b64);
-            const u8 = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-            blob = new Blob([u8], { type: r.type || "audio/webm" });
-          }
+          const blob = await mediaLoad(r.id, r.type);
           if (!blob) throw new Error("missing");
           const audio = el("audio", { controls: true, src: URL.createObjectURL(blob), class: "sl-audio" });
           holder.textContent = "";
@@ -4531,7 +4697,7 @@
             holder,
             el("button", { class: "sl-tool", "aria-label": "Delete recording", title: "Delete recording", onclick: () => {
               note.recordings = note.recordings.filter((x) => x !== r);
-              if (hasApp) tauri.core.invoke("delete_media", { id: r.id }).catch(() => {});
+              mediaDelete(r.id);
               touch(note);
               drawShelf();
             } }, svg(ICON.x, 13))));
@@ -4624,6 +4790,7 @@
         return out;
       }
       function paginate() {
+        applyWidth();
         const paged = layout() === "pages";
         paper.classList.toggle("paged", paged);
         clearPushes();
@@ -5011,6 +5178,18 @@
         return path;
       }
       const blob = new Blob([dataOrBytes], { type: mime || "application/octet-stream" });
+      // On phones and tablets, the share sheet lets people choose "Save to Files", AirDrop, Drive…
+      if (IS_PHONE_OR_TABLET && navigator.canShare) {
+        try {
+          const file = new File([blob], name, { type: blob.type });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: name });
+            return name;
+          }
+        } catch (e) {
+          if (e && e.name === "AbortError") return null;
+        }
+      }
       const a = el("a", { href: URL.createObjectURL(blob), download: name });
       document.body.append(a);
       a.click();
@@ -5290,7 +5469,7 @@
       s.setAttribute("viewBox", "0 0 220 220");
       s.setAttribute("class", "sl-ring");
       s.innerHTML = '<circle cx="110" cy="110" r="' + r + '" fill="none" stroke="rgba(47,46,43,0.08)" stroke-width="14"/>' +
-        '<circle class="sl-ring-fill" cx="110" cy="110" r="' + r + '" fill="none" stroke="#7d6c96" stroke-width="14" stroke-linecap="round" ' +
+        '<circle class="sl-ring-fill" cx="110" cy="110" r="' + r + '" fill="none" stroke="#b3a3c4" stroke-width="14" stroke-linecap="round" ' +
         'stroke-dasharray="' + c + '" stroke-dashoffset="' + c * (1 - Math.min(1, pct)) + '" transform="rotate(-90 110 110)"/>';
       return s;
     }
@@ -5730,7 +5909,7 @@
         tauri.core.invoke("island_enabled").then((on) => { input.checked = !!on; });
         islandToggle.append(input, el("span", { class: "sl-switch-track", "aria-hidden": "true" }, el("span", { class: "sl-switch-knob" })));
       }
-      const notesPlace = el("span", { class: "sl-set-hint", text: hasApp ? "Saved on this computer, in StillLife's own folder. A backup copy is kept automatically." : "Saved in this browser." });
+      const notesPlace = el("span", { class: "sl-set-hint", text: hasApp ? "Saved on this computer, in StillLife's own folder. A backup copy is kept automatically." : "Saved on this device, inside StillLife. Use Back up all notes now and then to keep a copy somewhere safe." });
       const hasCaptions = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
       let sheet = el("div", { class: "sl-sheet-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
         el("div", { class: "sl-settings", role: "dialog", "aria-label": "Settings" },
@@ -5752,7 +5931,7 @@
           row("Back to pen after erasing", toggle("eraserBackToPen", true)),
           row("Neat shapes when you hold at the end", toggle("shapeSnap", true)),
           el("span", { class: "sl-choice-head", text: "YOUR NOTES" }),
-          row("Back up all notes", el("button", { class: "sl-pill", onclick: () => backupAll(), text: "Back up" }), "Saves one file with everything to Downloads › StillLife."),
+          row("Back up all notes", el("button", { class: "sl-pill", onclick: () => backupAll(), text: "Back up" }), hasApp ? "Saves one file with everything to Downloads › StillLife." : "Saves one file with everything, to keep anywhere you like."),
           row("Import files", el("button", { class: "sl-pill", onclick: () => importPick.click(), text: "Import…" }), "Word, text, Markdown, web pages and pictures."),
           el("div", { class: "sl-set-row" }, notesPlace),
           el("span", { class: "sl-choice-head", text: "ABOUT" }),
@@ -5852,13 +6031,13 @@
       data.settings.openDocs = open;
       if (!opts.full || !open.length) return null;
       const strip = el("div", { class: "sl-doctabs", role: "tablist", "aria-label": "Open docs" });
-      strip.append(el("button", { class: "sl-doctab home" + (view.doc ? "" : " on"), role: "tab", onclick: () => { view.doc = null; render(); } }, svg(ICON.view, 13), "All notes"));
+      strip.append(el("button", { class: "sl-doctab home" + (view.doc || view.study ? "" : " on"), role: "tab", onclick: () => { view.doc = null; view.study = false; render(); } }, svg(ICON.view, 13), "All notes"));
       for (const id of open) {
         const n = data.notes.find((x) => x.id === id);
         strip.append(el("div", { class: "sl-doctab" + (view.doc === id ? " on" : ""), role: "tab", "aria-selected": view.doc === id ? "true" : "false" },
           el("button", {
             class: "sl-doctab-name", title: view.doc === id ? "Click to rename" : "Open (double-click to rename)",
-            onclick: (e) => { if (view.doc !== id) { view.doc = id; render(); } else renameDocTab(n, e.currentTarget); },
+            onclick: (e) => { if (view.doc !== id) { view.doc = id; view.study = false; render(); } else renameDocTab(n, e.currentTarget); },
             ondblclick: (e) => renameDocTab(n, e.currentTarget),
           }, svg(n.type === "code" ? ICON.code : ICON.doc, 12), n.title || (n.type === "code" ? "Untitled code" : "Untitled doc")),
           el("button", { class: "sl-doctab-x", "aria-label": "Close " + (n.title || "doc"), onclick: (e) => {
