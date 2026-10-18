@@ -1,4 +1,4 @@
-//! StillLife — v0.3.0
+//! StillLife — v0.3.1
 //!
 //! Two windows:
 //! - "main":   the full StillLife window. Closing it hides it; StillLife keeps running in the tray.
@@ -347,6 +347,14 @@ fn open_full_window(app: AppHandle, fold: tauri::State<'_, FoldRequest>) {
     show_main(&app);
 }
 
+/// Opens a doc from the plate in the full window, and folds the plate away.
+#[tauri::command]
+fn open_doc(app: AppHandle, fold: tauri::State<'_, FoldRequest>, id: String) {
+    fold.0.store(true, Ordering::SeqCst);
+    show_main(&app);
+    let _ = app.emit_to("main", "open-doc", id);
+}
+
 /// A click on the pill opens the plate straight away.
 #[tauri::command]
 fn open_island_now(open: tauri::State<'_, OpenRequest>) {
@@ -472,6 +480,7 @@ pub fn run() {
         .manage(Dock(Mutex::new((Edge::Top, 0.5))))
         .invoke_handler(tauri::generate_handler![
             open_full_window,
+            open_doc,
             open_island_now,
             island_dock,
             drag_island_start,
