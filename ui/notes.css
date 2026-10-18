@@ -1117,6 +1117,7 @@ button.sl-th:hover, .sl-th.on { color: var(--ink); }
 .sl-ed-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .sl-ed-stdin { min-height: 90px; resize: vertical; border: 0; border-radius: 12px; padding: 10px 12px; background: #ffffff; font-family: Consolas, monospace; font-size: 13px; outline: none; box-shadow: inset 0 0 0 1px rgba(47, 46, 43, 0.1); }
 .sl-ed-stdin:focus { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.sl-ed-stdin.ask { box-shadow: inset 0 0 0 2px var(--accent-grad); background: #f6f3fa; }
 .sl-ed-outhead { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); padding: 4px 8px 0; }
 .sl-ed-out { flex: 1; min-height: 140px; margin: 0; overflow: auto; padding: 12px; border-radius: 12px; background: #ffffff; font-family: Consolas, monospace; font-size: 13px; white-space: pre-wrap; box-shadow: inset 0 0 0 1px rgba(47, 46, 43, 0.1); }
 .sl-ed-out.err { color: var(--brick); }

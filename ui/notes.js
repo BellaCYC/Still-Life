@@ -13,7 +13,7 @@
   "use strict";
 
   const tauri = window.__TAURI__;
-  const VERSION = "1.1";
+  const VERSION = "1.1.1";
   const hasApp = !!(tauri && tauri.core);
 
   const COLORS = ["sage", "mist", "rose", "oat", "lilac", "clay", "celadon", "lavender"];
@@ -965,7 +965,7 @@
       else if (type === "code") {
         note.lang = data.settings.codeLang || "python";
         note.code = STARTER[note.lang] || "";
-        note.stdin = "";
+        note.stdin = "world"; // the starter programs read a name, so the first Run just works
         note.color = ["mist", "lilac", "celadon", "sage"][used % 4];
       } else {
         note.html = "";
@@ -5588,7 +5588,10 @@
           const wasStarter = !note.code || !note.code.trim() || Object.values(STARTER).includes(note.code);
           note.lang = v;
           data.settings.codeLang = v;
-          if (wasStarter) { note.code = STARTER[v] || ""; ta.value = note.code; }
+          if (wasStarter) {
+            note.code = STARTER[v] || ""; ta.value = note.code;
+            if (!note.stdin) { note.stdin = "world"; stdin.value = "world"; stdin.classList.remove("ask"); }
+          }
           touch(note);
           paint();
         },
@@ -5653,15 +5656,38 @@
       const out = el("pre", { class: "sl-ed-out", "aria-live": "polite" });
       const outHead = el("span", { class: "sl-ed-outhead", text: "OUTPUT" });
       out.textContent = note.lastOutput || "Press Run (or Ctrl+Enter) to see what your program prints.";
+      // Programs here can't pause and wait for typing: whatever they read comes from the INPUT box.
+      const READS_INPUT = /\binput\s*\(|sys\.stdin|\bcin\s*>>|\bscanf\s*\(|\bgetline\s*\(|new\s+Scanner\s*\(|BufferedReader|readLine\s*\(|readline\s*\(|\bgets\b|fmt\.Scan|read_line|Console\.ReadLine|\bfgets\s*\(|\bSTDIN\b|^\s*read\s+\w/m;
+      const OUT_OF_INPUT = /EOFError|EOF when reading|NoSuchElementException|end of (file|input)|UnexpectedEOF|unexpected EOF|null input/i;
+      let warnedEmpty = false;
+      stdin.addEventListener("input", () => { stdin.classList.remove("ask"); warnedEmpty = false; });
       async function run() {
         note.code = ta.value;
         touch(note);
+        if (!stdin.value.trim() && READS_INPUT.test(ta.value) && !warnedEmpty) {
+          warnedEmpty = true;
+          out.className = "sl-ed-out";
+          outHead.textContent = "OUTPUT";
+          out.textContent = "Your program asks for input, but the INPUT box above is empty.\n\n" +
+            "Type what you would enter there first: one line for each input() / cin / Scanner read.\n" +
+            "For example, for name = input() type a name, like Bella.\n\n" +
+            "Then press Run again. (Press Run now to run it with no input anyway.)";
+          stdin.classList.add("ask");
+          stdin.focus();
+          return;
+        }
+        stdin.classList.remove("ask");
         runBtn.disabled = true;
         out.className = "sl-ed-out";
         out.textContent = "Running " + langName(lang()) + "…";
         const t0 = Date.now();
         const res = await runOnWandbox(lang(), ta.value, stdin.value);
-        out.textContent = res.out;
+        let shown = res.out;
+        if (res.failed && OUT_OF_INPUT.test(res.out)) {
+          shown += "\n\n— Your program wanted more input than the INPUT box has. Add one line for each thing it reads, then press Run again.";
+          stdin.classList.add("ask");
+        }
+        out.textContent = shown;
         if (res.failed) out.classList.add("err");
         outHead.textContent = "OUTPUT · " + ((Date.now() - t0) / 1000).toFixed(1) + " s" + (res.failed ? " · error" : "");
         note.lastOutput = res.out.slice(0, 4000);
