@@ -1,4 +1,4 @@
-# Builds the Windows installer and publishes it as a GitHub Release.
+# Builds the Windows and Mac installers and publishes them as a GitHub Release.
 # Run it from the Actions tab ("Run workflow"), or push a tag like v0.1.0.
 name: Release
 
@@ -42,8 +42,11 @@ jobs:
           tagName: v__VERSION__
           releaseName: "StillLife v__VERSION__"
           releaseBody: |
-            Download **StillLife-Setup.exe** below and double-click it to install.
-            Windows may show "Windows protected your PC": click **More info**, then **Run anyway**.
+            **Windows:** download **StillLife-Setup.exe** and double-click it. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
+
+            **Mac:** download **StillLife-Mac.dmg**, open it and drag StillLife into Applications. The first time, open it from Applications; if the Mac says it can't check the developer, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+            **iPhone, iPad, Android phones and tablets:** open https://bellacyc.github.io/Still-Life/app/ and add it to your home screen.
           releaseDraft: false
           prerelease: false
 
@@ -56,3 +59,48 @@ jobs:
           SETUP=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -n 1)
           cp "$SETUP" StillLife-Setup.exe
           gh release upload "v$VERSION" StillLife-Setup.exe --clobber
+
+  mac:
+    needs: windows
+    runs-on: macos-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Rust (Intel and Apple silicon)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Reuse Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install tools
+        run: npm install
+
+      - name: Build the Mac app and add it to the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "StillLife v__VERSION__"
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin --bundles dmg
+
+      - name: Add the one-click download file (StillLife-Mac.dmg)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          DMG=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -n 1)
+          cp "$DMG" StillLife-Mac.dmg
+          gh release upload "v$VERSION" StillLife-Mac.dmg --clobber

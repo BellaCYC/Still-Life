@@ -7,7 +7,8 @@
  * - Docs show as previews; opening one shows a full document page (in the full window).
  * Labels belong to the user: none by default, add / rename / recolour / delete freely.
  *
- * When StillLife runs as a plain web page (e.g. previewing), data falls back to localStorage.
+ * When StillLife runs as a web app (iPhone, iPad, Android, any browser), notes are kept in the
+ * browser's own database (IndexedDB), with a copy in localStorage while it fits.
  */
 (function () {
   "use strict";
@@ -673,7 +674,10 @@
   // ---------- version history ----------
   const VERSION_KEEP = 40;
   const VERSION_BYTES = 500000;
-  let deviceName = "This computer";
+  const UA = navigator.userAgent || "";
+  const IS_IPAD = /iPad/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  const IS_PHONE_OR_TABLET = IS_IPAD || /iPhone|iPod|Android/.test(UA);
+  let deviceName = hasApp ? "This computer" : IS_IPAD ? "iPad" : /iPhone/.test(UA) ? "iPhone" : /Android/.test(UA) ? (/Mobile/.test(UA) ? "Android phone" : "Android tablet") : /Mac/.test(UA) ? "Mac" : "This device";
   if (hasApp) tauri.core.invoke("device_name").then((n) => { if (n) deviceName = n; }).catch(() => {});
   function versionsOf(note) {
     if (!Array.isArray(note.versions)) note.versions = [];
@@ -829,8 +833,75 @@
       const out = [res.compiler_error, res.program_output, res.program_error].filter(Boolean).join("\n").trim();
       return { out: out || "(no output)", failed: !!(res.status && res.status !== "0") };
     } catch (e) {
+      if (!hasApp && navigator.onLine !== false && e instanceof TypeError)
+        return { out: "Couldn't reach the code runner from this browser.\nCheck your internet connection and try again. If it keeps failing, running code works in the Windows and Mac apps.", failed: true };
       return { out: "Couldn't run the code. Check your internet connection.\n" + (e && e.message ? e.message : ""), failed: true };
     }
+  }
+
+  // ---------- web app storage (IndexedDB: no 5 MB limit, keeps pictures and recordings) ----------
+  const webDb = (() => {
+    let opening = null;
+    function open() {
+      if (!opening) opening = new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error("no IndexedDB")); return; }
+        const req = indexedDB.open("stilllife", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("kv");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      return opening;
+    }
+    function run(mode, fn) {
+      return open().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", mode);
+        const req = fn(tx.objectStore("kv"));
+        tx.oncomplete = () => resolve(req && req.result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      }));
+    }
+    return {
+      get: (k) => run("readonly", (st) => st.get(k)),
+      set: (k, v) => run("readwrite", (st) => st.put(v, k)),
+      del: (k) => run("readwrite", (st) => st.delete(k)),
+    };
+  })();
+  // Ask the browser not to clear StillLife's data when the device runs low on space.
+  if (!hasApp && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  async function webLoad() {
+    let rec = null;
+    try { rec = await webDb.get("notes"); } catch (e) { rec = null; }
+    let lsText = null;
+    let lsT = 0;
+    try { lsText = localStorage.getItem("stilllife-notes"); lsT = +(localStorage.getItem("stilllife-notes-t") || 0); } catch (e) {}
+    if (rec && rec.text && (!lsText || rec.t >= lsT)) return rec.text;
+    return lsText || "[]";
+  }
+  async function webSave(text) {
+    const t = Date.now();
+    let ok = false;
+    try { await webDb.set("notes", { t, text }); ok = true; } catch (e) {}
+    try { localStorage.setItem("stilllife-notes", text); localStorage.setItem("stilllife-notes-t", String(t)); ok = true; }
+    catch (e) { try { localStorage.removeItem("stilllife-notes"); localStorage.removeItem("stilllife-notes-t"); } catch (e2) {} }
+    if (!ok) throw new Error("this browser wouldn't save");
+  }
+  const saveText = (text) => (hasApp ? tauri.core.invoke("save_notes", { data: text }) : webSave(text));
+  // Recordings and other big media: a file in the app, the browser database on the web.
+  async function mediaSave(id, blob, toB64) {
+    if (hasApp) return tauri.core.invoke("save_media", { id, data: await toB64(blob) });
+    return webDb.set("media:" + id, blob);
+  }
+  async function mediaLoad(id, type) {
+    if (!hasApp) return (await webDb.get("media:" + id)) || null;
+    const b64 = await tauri.core.invoke("load_media", { id });
+    const bin = atob(b64);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: type || "audio/webm" });
+  }
+  function mediaDelete(id) {
+    (hasApp ? tauri.core.invoke("delete_media", { id }) : webDb.del("media:" + id)).catch(() => {});
   }
 
   // ---------- storage ----------
@@ -874,7 +945,7 @@
 
   async function load() {
     try {
-      const text = hasApp ? await tauri.core.invoke("load_notes") : (localStorage.getItem("stilllife-notes") || "[]");
+      const text = hasApp ? await tauri.core.invoke("load_notes") : await webLoad();
       data = migrate(JSON.parse(text));
       loadFailed = false;
     } catch (e) {
@@ -889,8 +960,7 @@
     saveTimer = setTimeout(async () => {
       const text = JSON.stringify(data);
       try {
-        if (hasApp) await tauri.core.invoke("save_notes", { data: text });
-        else localStorage.setItem("stilllife-notes", text);
+        await saveText(text);
       } catch (e) {
         console.error("StillLife could not save", e);
       }
@@ -979,8 +1049,7 @@
         // Save straight away so the full window can find it.
         clearTimeout(saveTimer);
         const text = JSON.stringify(data);
-        const done = hasApp ? tauri.core.invoke("save_notes", { data: text }) : Promise.resolve(localStorage.setItem("stilllife-notes", text));
-        Promise.resolve(done).then(() => openDoc(note.id));
+        saveText(text).catch(() => {}).then(() => openDoc(note.id));
         if (!opts.full) render();
       } else {
         save();
@@ -4414,7 +4483,6 @@
 
       // ----- lecture recording: record audio into the doc, with playback -----
       if (!Array.isArray(note.recordings)) note.recordings = [];
-      const memMedia = new Map(); // in the browser preview there is no disk
       let recorder = null;
       let recChunks = [];
       let recStart = 0;
@@ -4489,8 +4557,7 @@
         recBar.hidden = true;
         const id = "rec" + uid();
         try {
-          if (hasApp) await tauri.core.invoke("save_media", { id, data: await blobToB64(blob) });
-          else memMedia.set(id, blob);
+          await mediaSave(id, blob, blobToB64);
         } catch (e) {
           updateStatus("the recording couldn't be saved");
           return;
@@ -4503,14 +4570,7 @@
       async function playRecording(r, holder) {
         holder.textContent = "Loading…";
         try {
-          let blob = memMedia.get(r.id);
-          if (!blob && hasApp) {
-            const b64 = await tauri.core.invoke("load_media", { id: r.id });
-            const bin = atob(b64);
-            const u8 = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-            blob = new Blob([u8], { type: r.type || "audio/webm" });
-          }
+          const blob = await mediaLoad(r.id, r.type);
           if (!blob) throw new Error("missing");
           const audio = el("audio", { controls: true, src: URL.createObjectURL(blob), class: "sl-audio" });
           holder.textContent = "";
@@ -4531,7 +4591,7 @@
             holder,
             el("button", { class: "sl-tool", "aria-label": "Delete recording", title: "Delete recording", onclick: () => {
               note.recordings = note.recordings.filter((x) => x !== r);
-              if (hasApp) tauri.core.invoke("delete_media", { id: r.id }).catch(() => {});
+              mediaDelete(r.id);
               touch(note);
               drawShelf();
             } }, svg(ICON.x, 13))));
@@ -5011,6 +5071,18 @@
         return path;
       }
       const blob = new Blob([dataOrBytes], { type: mime || "application/octet-stream" });
+      // On phones and tablets, the share sheet lets people choose "Save to Files", AirDrop, Drive…
+      if (IS_PHONE_OR_TABLET && navigator.canShare) {
+        try {
+          const file = new File([blob], name, { type: blob.type });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: name });
+            return name;
+          }
+        } catch (e) {
+          if (e && e.name === "AbortError") return null;
+        }
+      }
       const a = el("a", { href: URL.createObjectURL(blob), download: name });
       document.body.append(a);
       a.click();
@@ -5290,7 +5362,7 @@
       s.setAttribute("viewBox", "0 0 220 220");
       s.setAttribute("class", "sl-ring");
       s.innerHTML = '<circle cx="110" cy="110" r="' + r + '" fill="none" stroke="rgba(47,46,43,0.08)" stroke-width="14"/>' +
-        '<circle class="sl-ring-fill" cx="110" cy="110" r="' + r + '" fill="none" stroke="#7d6c96" stroke-width="14" stroke-linecap="round" ' +
+        '<circle class="sl-ring-fill" cx="110" cy="110" r="' + r + '" fill="none" stroke="#b3a3c4" stroke-width="14" stroke-linecap="round" ' +
         'stroke-dasharray="' + c + '" stroke-dashoffset="' + c * (1 - Math.min(1, pct)) + '" transform="rotate(-90 110 110)"/>';
       return s;
     }
@@ -5730,7 +5802,7 @@
         tauri.core.invoke("island_enabled").then((on) => { input.checked = !!on; });
         islandToggle.append(input, el("span", { class: "sl-switch-track", "aria-hidden": "true" }, el("span", { class: "sl-switch-knob" })));
       }
-      const notesPlace = el("span", { class: "sl-set-hint", text: hasApp ? "Saved on this computer, in StillLife's own folder. A backup copy is kept automatically." : "Saved in this browser." });
+      const notesPlace = el("span", { class: "sl-set-hint", text: hasApp ? "Saved on this computer, in StillLife's own folder. A backup copy is kept automatically." : "Saved on this device, inside StillLife. Use Back up all notes now and then to keep a copy somewhere safe." });
       const hasCaptions = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
       let sheet = el("div", { class: "sl-sheet-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
         el("div", { class: "sl-settings", role: "dialog", "aria-label": "Settings" },
@@ -5752,7 +5824,7 @@
           row("Back to pen after erasing", toggle("eraserBackToPen", true)),
           row("Neat shapes when you hold at the end", toggle("shapeSnap", true)),
           el("span", { class: "sl-choice-head", text: "YOUR NOTES" }),
-          row("Back up all notes", el("button", { class: "sl-pill", onclick: () => backupAll(), text: "Back up" }), "Saves one file with everything to Downloads › StillLife."),
+          row("Back up all notes", el("button", { class: "sl-pill", onclick: () => backupAll(), text: "Back up" }), hasApp ? "Saves one file with everything to Downloads › StillLife." : "Saves one file with everything, to keep anywhere you like."),
           row("Import files", el("button", { class: "sl-pill", onclick: () => importPick.click(), text: "Import…" }), "Word, text, Markdown, web pages and pictures."),
           el("div", { class: "sl-set-row" }, notesPlace),
           el("span", { class: "sl-choice-head", text: "ABOUT" }),

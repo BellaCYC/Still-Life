@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>StillLife</title>
+  <meta name="theme-color" content="#f5f5f4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="StillLife">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="app-192.png">
   <link rel="stylesheet" href="notes.css">
   <style>
     :root {
@@ -34,6 +42,9 @@
       justify-content: space-between;
       gap: 14px;
       padding: 16px 24px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-left: max(24px, env(safe-area-inset-left));
+      padding-right: max(24px, env(safe-area-inset-right));
       background: var(--paper);
       border-bottom: 1px solid rgba(47, 46, 43, 0.08);
     }
@@ -71,7 +82,7 @@
       position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
       background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform 0.2s ease;
     }
-    .switch input:checked + .track { background: #7d6c96; }
+    .switch input:checked + .track { background: #b3a3c4; }
     .switch input:checked + .track .knob { transform: translateX(16px); }
     .switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 2px; }
 
@@ -102,7 +113,19 @@
     .swatches { display: flex; gap: 8px; margin-top: 6px; }
     .swatches span { width: 26px; height: 26px; border-radius: 8px; }
 
-    footer { padding: 0 24px 16px; font-size: 12px; color: var(--muted); }
+    footer { padding: 0 24px 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); font-size: 12px; color: var(--muted); }
+    .web .app-only { display: none !important; }
+    .web-only { display: none; }
+    .web .web-only { display: inline; }
+    @media (max-width: 700px) {
+      header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); gap: 8px; }
+      .brand .name { font-size: 19px; }
+      .planet { width: 30px; height: 30px; }
+      main { padding: 12px 12px 8px; gap: 10px; }
+      .tip { padding: 12px; font-size: 13px; }
+      .tip > .planet { display: none; }
+      footer { padding: 0 14px 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+    }
     .clock { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
     .clock[hidden] { display: none; }
     .clk-time { color: var(--ink); }
@@ -125,7 +148,7 @@
     </div>
     <div class="right">
       <div class="clock" id="clock" aria-live="off"></div>
-      <label class="switch" title="Turn the island off before exams or presentations">
+      <label class="switch app-only" title="Turn the island off before exams or presentations">
         <input type="checkbox" id="island-switch" checked>
         <span class="track" aria-hidden="true"><span class="knob"></span></span>
         <span id="island-label">Island on</span>
@@ -136,10 +159,15 @@
   <main>
     <div class="tip" id="tip">
       <span class="planet" aria-hidden="true" style="width: 28px; height: 28px; flex-shrink: 0"></span>
-      <div class="text">
+      <div class="text app-only">
         <strong>Quick look anytime:</strong> rest your cursor on the island pill at the edge of your screen to open it (drag the pill to move it to any edge).
         Closing this window keeps StillLife running in the tray, bottom-right.
         Before an exam, switch <strong>Island</strong> off (top-right), or choose <strong>Quit StillLife</strong> from the tray.
+      </div>
+      <div class="text web-only" id="web-tip">
+        <strong>Keep StillLife on your home screen:</strong>
+        <span id="install-how">on iPhone or iPad, tap Share, then Add to Home Screen. On Android, tap ⋮, then Install app or Add to Home screen.</span>
+        Your notes stay on this device.
       </div>
       <button id="hide-tip">Got it</button>
     </div>
@@ -147,7 +175,7 @@
     <div id="notes" class="notes-area"></div>
   </main>
 
-  <footer>Every note, quietly in orbit. · version 1.1.1</footer>
+  <footer>Every note, quietly in orbit. · version 1.2</footer>
 
   <script src="tools.js"></script>
   <script src="i18n.js"></script>
@@ -160,6 +188,10 @@
       weekday: "long", day: "numeric", month: "long", year: "numeric"
     });
     const tauri = window.__TAURI__;
+    if (!(tauri && tauri.core)) {
+      document.documentElement.classList.add("web");
+      if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
     const sw = document.getElementById("island-switch");
     const label = document.getElementById("island-label");
     function showIsland(on) {
@@ -180,7 +212,10 @@
     });
 
     const tip = document.getElementById("tip");
-    try { if (localStorage.getItem("tipHidden") === "1") tip.remove(); } catch (e) {}
+    const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    const isWeb = document.documentElement.classList.contains("web");
+    try { if (localStorage.getItem("tipHidden") === "1" || (isWeb && installed)) tip.remove(); } catch (e) {}
+    if (isWeb && !/iPhone|iPad|iPod|Android|Macintosh/.test(navigator.userAgent)) document.getElementById("install-how").textContent = "in Chrome or Edge, click the install icon at the right end of the address bar.";
     document.getElementById("hide-tip").addEventListener("click", () => {
       tip.remove();
       try { localStorage.setItem("tipHidden", "1"); } catch (e) {}

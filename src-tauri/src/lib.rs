@@ -457,6 +457,13 @@ fn open_link(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(u)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -603,7 +610,15 @@ fn reveal_file(app: AppHandle, path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = target;
     }
